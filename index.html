@@ -124,8 +124,22 @@
   .plan-grid .divider{grid-column:1/-1;border-top:1px dashed var(--border);margin:4px 0;}
   .plan-grid .subtotal .label, .plan-grid .subtotal .value{font-weight:700;}
   .plan-grid .grand .label, .plan-grid .grand .value{font-weight:700;color:var(--accent-dark);font-size:16px;}
+  .plan-grid .savings .label, .plan-grid .savings .value{color:var(--ok);font-weight:700;font-size:13px;}
   .plan-breakdown{font-size:12.5px;color:var(--sub);margin:4px 0 2px;padding-left:2px;}
   .empty-hint{color:var(--sub);font-size:13px;padding:8px 2px;}
+
+  .estimate{
+    border:1px solid var(--border);border-radius:10px;padding:20px 22px;background:#fcfcfd;
+  }
+  .estimate h3{font-size:14px;margin:0 0 10px;display:flex;align-items:center;gap:6px;}
+  .estimate h3::before{content:"▼";color:var(--accent);font-size:11px;}
+  .estimate .estimate-block{margin-bottom:18px;}
+  .estimate .estimate-row{display:flex;justify-content:space-between;font-size:14px;padding:4px 2px;border-bottom:1px dashed var(--border);}
+  .estimate .estimate-row.total{font-weight:700;border-bottom:none;border-top:1px solid var(--text);margin-top:2px;padding-top:8px;}
+  .estimate .bpay-formula{font-size:13px;color:var(--sub);margin:6px 0 8px;}
+  .estimate .bpay-formula strong{color:var(--text);}
+  .estimate .estimate-line{display:flex;justify-content:space-between;font-size:13.5px;padding:3px 2px 3px 12px;color:var(--text);}
+  .estimate .plan-tag{display:inline-block;font-size:12px;font-weight:700;color:var(--accent-dark);background:var(--accent-soft);border-radius:6px;padding:2px 8px;margin-bottom:12px;}
 
   .chosen-banner{
     background:var(--ok-soft);color:var(--ok);border:1px solid #bfe9d2;
@@ -223,6 +237,11 @@
     <h2>最終計算表示</h2>
     <div id="chosen-banner-holder"></div>
     <div id="final-plans"></div>
+  </section>
+
+  <section id="section-estimate">
+    <h2>見積書</h2>
+    <div id="estimate-holder"></div>
   </section>
 </div>
 
@@ -722,7 +741,9 @@
     const tax = Math.floor(cashPortionClamped * (fp.taxRate / 100));
     const subtotal = cashPortionClamped + tax;
     const grandTotal = subtotal + bPay;
-    return {bPay, baseValue, cashPortion, tax, subtotal, grandTotal};
+    const allCashTotal = fp.totalCash * (1 + fp.taxRate / 100);
+    const savings = grandTotal - allCashTotal;
+    return {bPay, baseValue, cashPortion, tax, subtotal, grandTotal, allCashTotal, savings};
   }
 
   function renderFinalPlans(){
@@ -732,6 +753,7 @@
     if(finalPlans.length === 0){
       holder.innerHTML = '<div class="empty-hint">上の「B払い組み合わせ提案」で案を採用すると、ここに表示されます。</div>';
       renderChosenBanner();
+      renderEstimate();
       return;
     }
 
@@ -789,7 +811,8 @@
         divider() +
         row("B払い（受取商品の定価合計）", yen(numbers.bPay)) +
         divider() +
-        row("総計", yen(numbers.grandTotal) + " 分", "grand");
+        row("総計", yen(numbers.grandTotal) + " 分", "grand") +
+        row("すべて現金払いの場合とくらべて", yen(numbers.savings) + " お得!!", "savings");
 
       card.appendChild(head);
       if(negative){
@@ -804,6 +827,7 @@
     });
 
     renderChosenBanner();
+    renderEstimate();
 
     function row(label, value, extraClass){
       return '<div class="label' + (extraClass ? ' ' + extraClass : '') + '">' + label + '</div>' +
@@ -824,6 +848,61 @@
     banner.innerHTML = '<span>選択中の案：<strong>' + planLabel(idx) + '</strong></span>' +
       '<span>総計 <strong>' + yen(numbers.grandTotal) + '</strong> 分</span>';
     holder.appendChild(banner);
+  }
+
+  function renderEstimate(){
+    const holder = document.getElementById("estimate-holder");
+    holder.innerHTML = "";
+    const idx = finalPlans.findIndex(fp => fp.chosen);
+    if(idx === -1){
+      holder.innerHTML = '<div class="empty-hint">「最終計算表示」で案を選択すると、ここに見積書が表示されます。</div>';
+      return;
+    }
+    const fp = finalPlans[idx];
+    const numbers = computePlanNumbers(fp);
+    const negative = numbers.cashPortion < 0;
+    const multiplier = 1 + fp.premium / 10;
+
+    const box = document.createElement("div");
+    box.className = "estimate";
+
+    const tag = document.createElement("div");
+    tag.className = "plan-tag";
+    tag.textContent = planLabel(idx) + " を採用";
+    box.appendChild(tag);
+
+    const cashBlock = document.createElement("div");
+    cashBlock.className = "estimate-block";
+    cashBlock.innerHTML =
+      '<h3>現金</h3>' +
+      '<div class="estimate-row"><span>税抜</span><span>' + yen(negative ? 0 : numbers.cashPortion) + '</span></div>' +
+      '<div class="estimate-row"><span>消費税</span><span>' + yen(negative ? 0 : numbers.tax) + '</span></div>' +
+      '<div class="estimate-row total"><span>総額（税込）</span><span>' + yen(negative ? 0 : numbers.subtotal) + '</span></div>';
+    box.appendChild(cashBlock);
+
+    const bpayBlock = document.createElement("div");
+    bpayBlock.className = "estimate-block";
+    bpayBlock.innerHTML = '<h3>B払い</h3>';
+
+    const formula = document.createElement("div");
+    formula.className = "bpay-formula";
+    formula.innerHTML =
+      '(' + yen(fp.totalCash) + ' − ' + yen(negative ? 0 : numbers.cashPortion) + ') × ' + fp.premium + '割 ＝ <strong>' + yen(numbers.bPay) + '</strong>';
+    bpayBlock.appendChild(formula);
+
+    for(const pid in fp.combo){
+      const p = products.find(x => x.id === Number(pid));
+      if(!p) continue;
+      const qty = fp.combo[pid];
+      const lineTotal = p.price * qty;
+      const line = document.createElement("div");
+      line.className = "estimate-line";
+      line.innerHTML = '<span>' + p.name + ' × ' + qty + '</span><span>' + yen(lineTotal) + '</span>';
+      bpayBlock.appendChild(line);
+    }
+    box.appendChild(bpayBlock);
+
+    holder.appendChild(box);
   }
 
   // ---------- premium hint ----------
