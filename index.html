@@ -887,7 +887,7 @@
     const formula = document.createElement("div");
     formula.className = "bpay-formula";
     formula.innerHTML =
-      '(' + yen(fp.totalCash) + ' − ' + yen(negative ? 0 : numbers.cashPortion) + ') × ' + fp.premium + '割 ＝ <strong>' + yen(numbers.bPay) + '</strong>';
+      '(' + yen(fp.totalCash) + ' − ' + yen(negative ? 0 : numbers.cashPortion) + ' = ' + yen(numbers.baseValue) + ') × ' + fp.premium + '割 ＝ <strong>' + yen(numbers.bPay) + '</strong>';
     bpayBlock.appendChild(formula);
 
     for(const pid in fp.combo){
