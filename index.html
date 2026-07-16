@@ -741,9 +741,10 @@
     const tax = Math.floor(cashPortionClamped * (fp.taxRate / 100));
     const subtotal = cashPortionClamped + tax;
     const grandTotal = subtotal + bPay;
-    const allCashTotal = fp.totalCash * (1 + fp.taxRate / 100);
-    const savings = grandTotal - allCashTotal;
-    return {bPay, baseValue, cashPortion, tax, subtotal, grandTotal, allCashTotal, savings};
+    // お得 = その案の総計 − すべて現金の場合の金額 + (すべて現金の場合の消費税額 − その案の消費税額)
+    const allCashTax = fp.totalCash * (fp.taxRate / 100);
+    const savings = grandTotal - fp.totalCash + (allCashTax - tax);
+    return {bPay, baseValue, cashPortion, tax, subtotal, grandTotal, allCashTax, savings};
   }
 
   function renderFinalPlans(){
