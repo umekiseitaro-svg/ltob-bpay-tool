@@ -1,0 +1,865 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>B払い計算ツール</title>
+<style>
+  :root{
+    --bg:#f5f6f8;
+    --card:#ffffff;
+    --border:#e2e5ea;
+    --text:#1f2430;
+    --sub:#6b7280;
+    --accent:#3d6cf0;
+    --accent-dark:#2b52c4;
+    --accent-soft:#eaf0ff;
+    --danger:#d64545;
+    --danger-soft:#fdecec;
+    --ok:#1e9e5a;
+    --ok-soft:#e7f8ef;
+    --radius:12px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:"Hiragino Kaku Gothic ProN","Hiragino Sans","Yu Gothic",-apple-system,BlinkMacSystemFont,sans-serif;
+    line-height:1.6;
+    padding-bottom:60px;
+  }
+  .app{max-width:820px;margin:0 auto;padding:24px 16px 80px;}
+  header{margin-bottom:24px;}
+  header h1{font-size:22px;margin:0 0 4px;}
+  header p{margin:0;color:var(--sub);font-size:13px;}
+
+  section{
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:18px 18px 20px;
+    margin-bottom:16px;
+  }
+  section h2{
+    font-size:15px;
+    margin:0 0 14px;
+    display:flex;
+    align-items:center;
+    gap:6px;
+  }
+  section h2::before{content:"▼";color:var(--accent);font-size:12px;}
+  .note{font-size:12px;color:var(--sub);margin:4px 0 10px;}
+  .note.warn{color:var(--danger);}
+  #sync-status{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:99px;background:#f0f2f5;font-size:11.5px;}
+  #sync-status.synced{background:var(--ok-soft);color:var(--ok);}
+  #sync-status.offline, #sync-status.error{background:var(--danger-soft);color:var(--danger);}
+  #sync-status.busy{background:var(--accent-soft);color:var(--accent-dark);}
+
+  table{width:100%;border-collapse:collapse;font-size:14px;}
+  th,td{padding:8px 6px;border-bottom:1px solid var(--border);text-align:left;}
+  th{font-size:12px;color:var(--sub);font-weight:600;}
+  td input[type=text], td input[type=number]{
+    width:100%;border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:14px;
+  }
+  td.num{text-align:right;}
+  td.num input{text-align:right;}
+  .row-actions{white-space:nowrap;}
+  .btn{
+    border:1px solid var(--border);background:#fff;border-radius:8px;
+    padding:7px 14px;font-size:13px;cursor:pointer;color:var(--text);
+  }
+  .btn:hover{background:#f0f2f5;}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;}
+  .btn.primary:hover{background:var(--accent-dark);}
+  .btn.small{padding:4px 10px;font-size:12px;}
+  .btn.danger{color:var(--danger);}
+  .btn.danger:hover{background:var(--danger-soft);}
+  .toolbar{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;}
+
+  .field{margin-bottom:14px;}
+  .field label{display:block;font-size:13px;font-weight:600;margin-bottom:6px;}
+  .field .input-row{display:flex;align-items:center;gap:8px;}
+  .field input[type=number]{
+    border:1px solid var(--border);border-radius:8px;padding:9px 10px;font-size:15px;width:180px;
+  }
+  .field .suffix{font-size:13px;color:var(--sub);}
+
+  .checklist{display:flex;flex-direction:column;gap:4px;}
+  .checklist label{
+    display:flex;align-items:center;gap:12px;padding:10px 10px;border-radius:8px;font-size:14px;cursor:pointer;
+    border:1px solid var(--border);
+  }
+  .checklist label:hover{background:#f5f7fb;}
+  .checklist label.selected{border-color:var(--accent);background:var(--accent-soft);}
+  .checklist input[type=checkbox]{width:18px;height:18px;flex-shrink:0;}
+  .checklist .name{flex:1;}
+  .checklist .price{color:var(--sub);font-size:13px;}
+
+  .proposal{
+    border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:10px;
+    display:flex;align-items:flex-start;gap:12px;
+  }
+  .proposal.adopted{border-color:var(--accent);background:var(--accent-soft);}
+  .proposal input[type=checkbox]{margin-top:3px;width:16px;height:16px;}
+  .proposal .body{flex:1;}
+  .proposal .combo-items{font-size:13px;color:var(--text);margin-bottom:4px;}
+  .proposal .meta{font-size:12px;color:var(--sub);display:flex;gap:14px;flex-wrap:wrap;}
+  .proposal .diff-badge{
+    font-size:11px;padding:2px 8px;border-radius:99px;background:#f0f2f5;color:var(--sub);
+  }
+  .proposal .diff-badge.close{background:var(--ok-soft);color:var(--ok);}
+
+  .plan-card{
+    border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:14px;
+  }
+  .plan-card.chosen{border-color:var(--ok);box-shadow:0 0 0 2px var(--ok-soft) inset;}
+  .plan-head{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+  .plan-head input[type=checkbox]{width:18px;height:18px;}
+  .plan-head .plan-label{font-weight:700;font-size:15px;}
+  .plan-head .plan-remove{margin-left:auto;}
+  .plan-grid{display:grid;grid-template-columns:1fr auto;row-gap:6px;font-size:14px;padding:0 2px;}
+  .plan-grid .label{color:var(--sub);}
+  .plan-grid .value{text-align:right;font-variant-numeric:tabular-nums;}
+  .plan-grid .divider{grid-column:1/-1;border-top:1px dashed var(--border);margin:4px 0;}
+  .plan-grid .subtotal .label, .plan-grid .subtotal .value{font-weight:700;}
+  .plan-grid .grand .label, .plan-grid .grand .value{font-weight:700;color:var(--accent-dark);font-size:16px;}
+  .plan-breakdown{font-size:12.5px;color:var(--sub);margin:4px 0 2px;padding-left:2px;}
+  .empty-hint{color:var(--sub);font-size:13px;padding:8px 2px;}
+
+  .chosen-banner{
+    background:var(--ok-soft);color:var(--ok);border:1px solid #bfe9d2;
+    border-radius:10px;padding:12px 14px;font-size:14px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;
+  }
+  .chosen-banner strong{font-size:16px;}
+
+  @media (max-width:520px){
+    .field input[type=number]{width:140px;}
+    .plan-grid{font-size:13px;}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>B払い 計算ツール</h1>
+    <p>事粒交換用の見積り計算ツール。現金とB払い(粒)を組み合わせた支払いプランを作成します。</p>
+  </header>
+
+  <section id="section-products">
+    <h2>B商品価格リスト</h2>
+    <p class="note">商品名・価格は自由に編集・追加・削除できます。「数量」「単位」を入力すると、同じ単位の商品同士で割高な組み合わせ（例：1000粒×2 は 2000粒×1 より高い）を提案から自動的に除外します。粒・原液量などのない商品は空欄のままで構いません。</p>
+    <p class="note" id="sync-status"></p>
+    <table>
+      <thead><tr>
+        <th>商品名</th>
+        <th style="width:120px;">価格（円）</th>
+        <th style="width:90px;">数量</th>
+        <th style="width:80px;">単位</th>
+        <th style="width:60px;"></th>
+      </tr></thead>
+      <tbody id="product-tbody"></tbody>
+    </table>
+    <div class="toolbar">
+      <button class="btn" id="btn-add-product">＋ 商品を追加</button>
+      <button class="btn" id="btn-reset-products">初期リストに戻す</button>
+    </div>
+  </section>
+
+  <section id="section-calc">
+    <h2>計算ツール</h2>
+    <div class="field">
+      <label>B払いのプレミアム率</label>
+      <div class="input-row">
+        <input type="number" id="input-premium" step="0.1" min="0" value="0">
+        <span class="suffix">割　（例：3割2分 → 3.2　／　小数点1桁まで）</span>
+      </div>
+    </div>
+    <div class="field">
+      <label>すべて現金の場合の金額</label>
+      <div class="input-row">
+        <input type="number" id="input-total-cash" step="1" min="0">
+        <span class="suffix">円（税抜）</span>
+      </div>
+    </div>
+    <div class="field">
+      <label>そのうちB払いにしたい金額</label>
+      <div class="input-row">
+        <span class="suffix">約</span>
+        <input type="number" id="input-desired-b" step="1" min="0">
+        <span class="suffix">円</span>
+      </div>
+      <p class="note" id="premium-hint" style="margin-top:8px;"></p>
+    </div>
+    <div class="field">
+      <label>消費税率</label>
+      <div class="input-row">
+        <input type="number" id="input-tax-rate" step="1" min="0" max="100" value="10" style="width:100px;">
+        <span class="suffix">％　※現金部分にのみ課税。B払い部分は非課税。</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="section-desired">
+    <h2>ほしい商品は？</h2>
+    <p class="note">B商品リストから、B払いに使いたい商品を複数選択してください。</p>
+    <div class="toolbar" style="margin-top:0;margin-bottom:12px;">
+      <button class="btn small" id="btn-select-all">すべて選択</button>
+      <button class="btn small" id="btn-select-none">すべて解除</button>
+    </div>
+    <div class="checklist" id="desired-checklist"></div>
+  </section>
+
+  <section id="section-proposals">
+    <h2>B払い組み合わせ提案</h2>
+    <p class="note">上の「そのうちB払いにしたい金額」に近くなる商品の組み合わせを提案します。採用したい案にチェックを入れると、下の「最終計算表示」に案として追加されます。</p>
+    <div class="toolbar" style="margin-top:0;margin-bottom:12px;">
+      <button class="btn primary" id="btn-search">組み合わせを提案する</button>
+    </div>
+    <div id="proposal-list"></div>
+  </section>
+
+  <section id="section-final">
+    <h2>最終計算表示</h2>
+    <div id="chosen-banner-holder"></div>
+    <div id="final-plans"></div>
+  </section>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  const STORAGE_KEY = "ltob_bpay_products_v2";
+
+  // 商品リストを共有するGoogle Apps Script Web AppのURLとトークン
+  const REMOTE_API_URL = "https://script.google.com/macros/s/AKfycbw8OLWBJiXvXJ-c8SpDMtmTx440lQSB4ZrNIT_Z9CHMYpOOkERr8AXbBVjkmCpmPcwJdw/exec";
+  const REMOTE_API_TOKEN = "YGfcWJDnrN8fXEs2m4ru0AOGFR-z63KW";
+
+  const DEFAULT_PRODUCTS = [
+    {id:1, name:"500粒", price:5157, quantity:500, unit:"粒"},
+    {id:2, name:"1000粒", price:9880, quantity:1000, unit:"粒"},
+    {id:3, name:"2000粒", price:17700, quantity:2000, unit:"粒"},
+    {id:4, name:"BCEx 原液 50ml", price:4278, quantity:50, unit:"ml"},
+    {id:5, name:"BCEx 原液 400ml", price:26700, quantity:400, unit:"ml"},
+    {id:6, name:"BCEx ドリンク", price:1100, quantity:0, unit:""},
+    {id:7, name:"BCEx 503", price:3200, quantity:0, unit:""},
+  ];
+
+  let nextProductId = 100;
+  let products = [];
+  let desiredProductIds = new Set(); // default: none selected
+  let proposals = []; // {sig, sum, count, combo:{productId:qty}, diff}
+  let adoptedSigs = new Set(); // proposal.sig currently checked "採用"
+  let finalPlans = []; // {id, label, sig, combo, rawSum, premium, taxRate, totalCash, desiredB, chosen}
+  let nextPlanId = 1;
+
+  // ---------- storage ----------
+  function recomputeNextProductId(){
+    nextProductId = products.length ? Math.max(...products.map(p=>p.id)) + 1 : 100;
+  }
+  function loadCachedProducts(){
+    try{
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if(raw){
+        const parsed = JSON.parse(raw);
+        if(Array.isArray(parsed) && parsed.length) return normalizeProducts(parsed);
+      }
+    }catch(e){}
+    return null;
+  }
+  function saveLocalCache(){
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(products)); }catch(e){}
+  }
+  function normalizeProducts(list){
+    return list.map(p=>({
+      id: Number(p.id),
+      name: String(p.name || ""),
+      price: Number(p.price) || 0,
+      quantity: Number(p.quantity) || 0,
+      unit: String(p.unit || "")
+    }));
+  }
+
+  // ---------- remote sync ----------
+  let syncTimer = null;
+  function setSyncStatus(state){
+    const el = document.getElementById("sync-status");
+    if(!el) return;
+    el.className = state;
+    const labels = {
+      loading: "🔄 商品リストを読み込み中…",
+      busy: "🔄 共有リストと同期中…",
+      synced: "✅ 共有リストと同期済み",
+      offline: "📴 オフライン（この端末のみに保存されています）",
+      error: "⚠ 同期に失敗しました（この端末のみに保存されています）"
+    };
+    el.textContent = labels[state] || "";
+  }
+  function saveProducts(){
+    saveLocalCache();
+    scheduleRemoteSync();
+  }
+  function scheduleRemoteSync(){
+    if(!REMOTE_API_URL) return;
+    setSyncStatus("busy");
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(pushProductsToRemote, 800);
+  }
+  async function pushProductsToRemote(){
+    if(!REMOTE_API_URL) return;
+    setSyncStatus("busy");
+    try{
+      const res = await fetch(REMOTE_API_URL, {
+        method: "POST",
+        body: JSON.stringify({ token: REMOTE_API_TOKEN, products })
+      });
+      const data = await res.json();
+      setSyncStatus(data && data.ok ? "synced" : "error");
+    }catch(e){
+      setSyncStatus("offline");
+    }
+  }
+  async function initProducts(){
+    const cached = loadCachedProducts();
+    products = cached || DEFAULT_PRODUCTS.map(p=>({...p}));
+    recomputeNextProductId();
+    renderProductTable();
+    renderDesiredChecklist();
+
+    if(!REMOTE_API_URL){ setSyncStatus(""); return; }
+
+    setSyncStatus("loading");
+    try{
+      const res = await fetch(REMOTE_API_URL);
+      const data = await res.json();
+      if(data && Array.isArray(data.products) && data.products.length > 0){
+        products = normalizeProducts(data.products);
+        recomputeNextProductId();
+        saveLocalCache();
+        renderProductTable();
+        renderDesiredChecklist();
+        setSyncStatus("synced");
+      }else{
+        // 共有シートがまだ空 → 現在のリストで初期化（シードする）
+        await pushProductsToRemote();
+      }
+    }catch(e){
+      setSyncStatus("offline");
+    }
+  }
+
+  // ---------- helpers ----------
+  function yen(n){
+    if(!isFinite(n)) n = 0;
+    return Math.round(n).toLocaleString("ja-JP") + "円";
+  }
+  function yenSigned(n){
+    if(!isFinite(n)) n = 0;
+    const rounded = Math.round(n);
+    const sign = rounded > 0 ? "+" : rounded < 0 ? "-" : "";
+    return sign + Math.abs(rounded).toLocaleString("ja-JP") + "円";
+  }
+  function num(id){
+    const el = document.getElementById(id);
+    const v = parseFloat(el.value);
+    return isFinite(v) ? v : 0;
+  }
+  function comboSignature(combo){
+    return Object.keys(combo).sort((a,b)=>a-b).map(k=>k+":"+combo[k]).join("|");
+  }
+  function comboRawSum(combo){
+    let s = 0;
+    for(const pid in combo){
+      const p = products.find(p=>p.id === Number(pid));
+      if(p) s += p.price * combo[pid];
+    }
+    return s;
+  }
+  function comboText(combo){
+    const parts = [];
+    for(const pid in combo){
+      const p = products.find(p=>p.id === Number(pid));
+      if(p) parts.push(p.name + " × " + combo[pid]);
+    }
+    return parts.join("、") || "（商品なし）";
+  }
+
+  // ---------- product list rendering ----------
+  function renderProductTable(){
+    const tbody = document.getElementById("product-tbody");
+    tbody.innerHTML = "";
+    products.forEach(p=>{
+      const tr = document.createElement("tr");
+
+      const tdName = document.createElement("td");
+      const nameInput = document.createElement("input");
+      nameInput.type = "text";
+      nameInput.value = p.name;
+      nameInput.addEventListener("input", ()=>{ p.name = nameInput.value; saveProducts(); renderDesiredChecklist(); });
+      tdName.appendChild(nameInput);
+
+      const tdPrice = document.createElement("td");
+      tdPrice.className = "num";
+      const priceInput = document.createElement("input");
+      priceInput.type = "number";
+      priceInput.step = "1";
+      priceInput.min = "0";
+      priceInput.value = p.price;
+      priceInput.addEventListener("input", ()=>{
+        p.price = parseFloat(priceInput.value) || 0;
+        saveProducts();
+        renderDesiredChecklist();
+      });
+      tdPrice.appendChild(priceInput);
+
+      const tdQty = document.createElement("td");
+      const qtyInput = document.createElement("input");
+      qtyInput.type = "number";
+      qtyInput.step = "1";
+      qtyInput.min = "0";
+      qtyInput.placeholder = "任意";
+      qtyInput.value = p.quantity || "";
+      qtyInput.addEventListener("input", ()=>{
+        p.quantity = parseFloat(qtyInput.value) || 0;
+        saveProducts();
+      });
+      tdQty.appendChild(qtyInput);
+
+      const tdUnit = document.createElement("td");
+      const unitInput = document.createElement("input");
+      unitInput.type = "text";
+      unitInput.placeholder = "任意";
+      unitInput.value = p.unit || "";
+      unitInput.addEventListener("input", ()=>{
+        p.unit = unitInput.value;
+        saveProducts();
+      });
+      tdUnit.appendChild(unitInput);
+
+      const tdActions = document.createElement("td");
+      tdActions.className = "row-actions";
+      const delBtn = document.createElement("button");
+      delBtn.className = "btn small danger";
+      delBtn.textContent = "削除";
+      delBtn.addEventListener("click", ()=>{
+        products = products.filter(x=>x.id !== p.id);
+        desiredProductIds.delete(p.id);
+        saveProducts();
+        renderProductTable();
+        renderDesiredChecklist();
+      });
+      tdActions.appendChild(delBtn);
+
+      tr.appendChild(tdName);
+      tr.appendChild(tdPrice);
+      tr.appendChild(tdQty);
+      tr.appendChild(tdUnit);
+      tr.appendChild(tdActions);
+      tbody.appendChild(tr);
+    });
+  }
+
+  document.getElementById("btn-add-product").addEventListener("click", ()=>{
+    const newProduct = {id: nextProductId++, name:"新規商品", price:0, quantity:0, unit:""};
+    products.push(newProduct);
+    saveProducts();
+    renderProductTable();
+    renderDesiredChecklist();
+  });
+  document.getElementById("btn-reset-products").addEventListener("click", ()=>{
+    if(!confirm("商品リストを初期状態に戻します。よろしいですか？")) return;
+    products = DEFAULT_PRODUCTS.map(p=>({...p}));
+    nextProductId = 100;
+    desiredProductIds.clear();
+    saveProducts();
+    renderProductTable();
+    renderDesiredChecklist();
+  });
+  document.getElementById("btn-select-all").addEventListener("click", ()=>{
+    desiredProductIds = new Set(products.map(p=>p.id));
+    renderDesiredChecklist();
+  });
+  document.getElementById("btn-select-none").addEventListener("click", ()=>{
+    desiredProductIds.clear();
+    renderDesiredChecklist();
+  });
+
+  // ---------- desired products checklist ----------
+  function renderDesiredChecklist(){
+    const holder = document.getElementById("desired-checklist");
+    holder.innerHTML = "";
+    if(products.length === 0){
+      holder.innerHTML = '<div class="empty-hint">商品リストが空です。上でB商品を追加してください。</div>';
+      return;
+    }
+    products.forEach(p=>{
+      const label = document.createElement("label");
+      if(desiredProductIds.has(p.id)) label.classList.add("selected");
+
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = desiredProductIds.has(p.id);
+      cb.addEventListener("change", ()=>{
+        if(cb.checked){
+          desiredProductIds.add(p.id);
+          label.classList.add("selected");
+        }else{
+          desiredProductIds.delete(p.id);
+          label.classList.remove("selected");
+        }
+      });
+
+      const nameSpan = document.createElement("span");
+      nameSpan.className = "name";
+      nameSpan.textContent = p.name;
+
+      const priceSpan = document.createElement("span");
+      priceSpan.className = "price";
+      priceSpan.textContent = yen(p.price);
+
+      label.appendChild(cb);
+      label.appendChild(nameSpan);
+      label.appendChild(priceSpan);
+      holder.appendChild(label);
+    });
+  }
+
+  // ---------- dominance check ----------
+  // A combo is "dominated" if it uses enough units of some product A that swapping
+  // them for a same-or-larger-denomination product B (same unit, integer multiple of
+  // quantity) would cost the same or less — e.g. 1000粒×2 (¥19,760) costs more than
+  // 2000粒×1 (¥17,700), so any combo containing 1000粒×2 or more is excluded.
+  function isComboDominated(combo){
+    for(const idA in combo){
+      const A = products.find(p=>p.id === Number(idA));
+      if(!A || !A.quantity || !A.unit) continue;
+      const countA = combo[idA];
+      if(!countA) continue;
+      for(const B of products){
+        if(B.id === A.id || !B.quantity || B.unit !== A.unit) continue;
+        if(B.quantity <= A.quantity || B.quantity % A.quantity !== 0) continue;
+        const k = B.quantity / A.quantity;
+        if(countA >= k && B.price <= k * A.price){
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  // ---------- combination search ----------
+  function searchCombinations(selectedProducts, target){
+    if(target <= 0 || selectedProducts.length === 0) return [];
+    const cheapest = Math.min(...selectedProducts.map(p=>p.price).filter(x=>x>0));
+    if(!isFinite(cheapest) || cheapest <= 0) return [];
+
+    const maxSum = Math.min(
+      Math.ceil(target * 1.6) + Math.max(...selectedProducts.map(p=>p.price)),
+      500000
+    );
+
+    // dp[s] = {count, viaProduct, prevSum}  (unbounded knapsack, min item count)
+    const dp = new Array(maxSum + 1).fill(null);
+    dp[0] = {count:0, viaProduct:null, prevSum:-1};
+
+    for(let s = 1; s <= maxSum; s++){
+      let bestCount = Infinity, bestProduct = null;
+      for(const p of selectedProducts){
+        if(p.price > 0 && p.price <= s && dp[s - p.price]){
+          const c = dp[s - p.price].count + 1;
+          if(c < bestCount){ bestCount = c; bestProduct = p; }
+        }
+      }
+      if(bestProduct){
+        dp[s] = {count:bestCount, viaProduct:bestProduct.id, prevSum:s - bestProduct.price};
+      }
+    }
+
+    function buildCombo(sum){
+      const combo = {};
+      let s = sum;
+      while(s > 0 && dp[s] && dp[s].viaProduct !== null){
+        const pid = dp[s].viaProduct;
+        combo[pid] = (combo[pid] || 0) + 1;
+        s = dp[s].prevSum;
+      }
+      return combo;
+    }
+
+    const candidates = [];
+    for(let s = 1; s <= maxSum; s++){
+      if(dp[s]){
+        candidates.push({sum:s, count:dp[s].count, diff:Math.abs(s - target)});
+      }
+    }
+    candidates.sort((a,b)=> a.diff - b.diff || a.count - b.count);
+
+    const results = [];
+    const seen = new Set();
+    for(const c of candidates){
+      const combo = buildCombo(c.sum);
+      const sig = comboSignature(combo);
+      if(seen.has(sig)) continue;
+      seen.add(sig);
+      if(isComboDominated(combo)) continue;
+      results.push({sig, sum:c.sum, count:c.count, combo, diff:c.diff});
+      if(results.length >= 6) break;
+    }
+    return results;
+  }
+
+  function runSearch(){
+    const premium = num("input-premium");
+    const desiredB = num("input-desired-b");
+    const selected = products.filter(p => desiredProductIds.has(p.id) && p.price > 0);
+
+    if(selected.length === 0){
+      alert("「ほしい商品は？」で商品を1つ以上選択してください。");
+      return;
+    }
+    if(desiredB <= 0){
+      alert("「そのうちB払いにしたい金額」を入力してください。");
+      return;
+    }
+
+    const multiplier = 1 + premium / 10;
+    const targetRawSum = desiredB * multiplier;
+
+    proposals = searchCombinations(selected, targetRawSum);
+    renderProposals();
+  }
+  document.getElementById("btn-search").addEventListener("click", runSearch);
+
+  function renderProposals(){
+    const holder = document.getElementById("proposal-list");
+    holder.innerHTML = "";
+
+    if(proposals.length === 0){
+      holder.innerHTML = '<div class="empty-hint">まだ提案がありません。「ほしい商品」を選択して「組み合わせを提案する」を押してください。</div>';
+      return;
+    }
+
+    const premium = num("input-premium");
+    const multiplier = 1 + premium / 10;
+    const desiredB = num("input-desired-b");
+    const target = desiredB * multiplier;
+
+    proposals.forEach(prop=>{
+      const closeEnough = target > 0 && Math.abs(prop.sum - target) / target < 0.05;
+
+      const wrap = document.createElement("div");
+      wrap.className = "proposal" + (adoptedSigs.has(prop.sig) ? " adopted" : "");
+
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = adoptedSigs.has(prop.sig);
+      cb.addEventListener("change", ()=>{
+        if(cb.checked){
+          adoptedSigs.add(prop.sig);
+          adoptPlan(prop);
+        }else{
+          adoptedSigs.delete(prop.sig);
+          removePlanBySig(prop.sig);
+        }
+        renderProposals();
+        renderFinalPlans();
+      });
+
+      const body = document.createElement("div");
+      body.className = "body";
+
+      const items = document.createElement("div");
+      items.className = "combo-items";
+      items.textContent = comboText(prop.combo);
+
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      meta.innerHTML =
+        '<span>受け取れる商品の定価合計：' + yen(prop.sum) + '</span>' +
+        '<span class="diff-badge' + (closeEnough ? ' close' : '') + '">目標（希望額×プレミアム）との差 ' + yenSigned(prop.sum - target) + '</span>';
+
+      body.appendChild(items);
+      body.appendChild(meta);
+      wrap.appendChild(cb);
+      wrap.appendChild(body);
+      holder.appendChild(wrap);
+    });
+  }
+
+  // ---------- final plans ----------
+  function planLabel(index){
+    // A, B, C, ...
+    return String.fromCharCode(65 + index) + "案";
+  }
+
+  function adoptPlan(prop){
+    if(finalPlans.some(fp => fp.sig === prop.sig)) return;
+    finalPlans.push({
+      id: nextPlanId++,
+      sig: prop.sig,
+      combo: prop.combo,
+      rawSum: prop.sum,
+      premium: num("input-premium"),
+      taxRate: num("input-tax-rate"),
+      totalCash: num("input-total-cash"),
+      desiredB: num("input-desired-b"),
+      chosen: false
+    });
+  }
+  function removePlanBySig(sig){
+    finalPlans = finalPlans.filter(fp => fp.sig !== sig);
+  }
+
+  function computePlanNumbers(fp){
+    // B払い = 受け取る商品の定価合計（fp.rawSum）。
+    // 現金 = すべて現金の場合の金額 - (受け取れる商品の定価合計からプレミアム利率分を差し引いた額)
+    const multiplier = 1 + fp.premium / 10;
+    const bPay = fp.rawSum;
+    const baseValue = bPay / multiplier; // プレミアム利率分を差し引いた額
+    const cashPortion = fp.totalCash - baseValue;
+    const cashPortionClamped = Math.max(cashPortion, 0);
+    const tax = Math.floor(cashPortionClamped * (fp.taxRate / 100));
+    const subtotal = cashPortionClamped + tax;
+    const grandTotal = subtotal + bPay;
+    return {bPay, baseValue, cashPortion, tax, subtotal, grandTotal};
+  }
+
+  function renderFinalPlans(){
+    const holder = document.getElementById("final-plans");
+    holder.innerHTML = "";
+
+    if(finalPlans.length === 0){
+      holder.innerHTML = '<div class="empty-hint">上の「B払い組み合わせ提案」で案を採用すると、ここに表示されます。</div>';
+      renderChosenBanner();
+      return;
+    }
+
+    finalPlans.forEach((fp, idx)=>{
+      const numbers = computePlanNumbers(fp);
+      const label = planLabel(idx);
+      const negative = numbers.cashPortion < 0;
+
+      const card = document.createElement("div");
+      card.className = "plan-card" + (fp.chosen ? " chosen" : "");
+
+      const head = document.createElement("div");
+      head.className = "plan-head";
+
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = fp.chosen;
+      cb.title = "この案を選択する";
+      cb.addEventListener("change", ()=>{
+        const willChoose = cb.checked;
+        finalPlans.forEach(x => x.chosen = false);
+        if(willChoose) fp.chosen = true;
+        renderFinalPlans();
+      });
+
+      const labelSpan = document.createElement("span");
+      labelSpan.className = "plan-label";
+      labelSpan.textContent = label;
+
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "btn small danger plan-remove";
+      removeBtn.textContent = "この案を削除";
+      removeBtn.addEventListener("click", ()=>{
+        adoptedSigs.delete(fp.sig);
+        finalPlans = finalPlans.filter(x=>x.id !== fp.id);
+        renderProposals();
+        renderFinalPlans();
+      });
+
+      head.appendChild(cb);
+      head.appendChild(labelSpan);
+      head.appendChild(removeBtn);
+
+      const breakdown = document.createElement("div");
+      breakdown.className = "plan-breakdown";
+      breakdown.textContent = "B払い内訳：" + comboText(fp.combo);
+
+      const grid = document.createElement("div");
+      grid.className = "plan-grid";
+      grid.innerHTML =
+        row("現金", yen(negative ? 0 : numbers.cashPortion)) +
+        row("消費税", yen(negative ? 0 : numbers.tax)) +
+        divider() +
+        row("小計", yen(negative ? 0 : numbers.subtotal), "subtotal") +
+        divider() +
+        row("B払い（受取商品の定価合計）", yen(numbers.bPay)) +
+        divider() +
+        row("総計", yen(numbers.grandTotal) + " 分", "grand");
+
+      card.appendChild(head);
+      if(negative){
+        const warn = document.createElement("p");
+        warn.className = "note warn";
+        warn.textContent = "⚠ B払い希望額が「すべて現金の場合の金額」を超えています。金額を見直してください。";
+        card.appendChild(warn);
+      }
+      card.appendChild(breakdown);
+      card.appendChild(grid);
+      holder.appendChild(card);
+    });
+
+    renderChosenBanner();
+
+    function row(label, value, extraClass){
+      return '<div class="label' + (extraClass ? ' ' + extraClass : '') + '">' + label + '</div>' +
+             '<div class="value' + (extraClass ? ' ' + extraClass : '') + '">' + value + '</div>';
+    }
+    function divider(){ return '<div class="divider"></div>'; }
+  }
+
+  function renderChosenBanner(){
+    const holder = document.getElementById("chosen-banner-holder");
+    holder.innerHTML = "";
+    const idx = finalPlans.findIndex(fp => fp.chosen);
+    if(idx === -1) return;
+    const fp = finalPlans[idx];
+    const numbers = computePlanNumbers(fp);
+    const banner = document.createElement("div");
+    banner.className = "chosen-banner";
+    banner.innerHTML = '<span>選択中の案：<strong>' + planLabel(idx) + '</strong></span>' +
+      '<span>総計 <strong>' + yen(numbers.grandTotal) + '</strong> 分</span>';
+    holder.appendChild(banner);
+  }
+
+  // ---------- premium hint ----------
+  function updatePremiumHint(){
+    const premium = num("input-premium");
+    const desiredB = num("input-desired-b");
+    const multiplier = 1 + premium / 10;
+    const hint = document.getElementById("premium-hint");
+    if(desiredB > 0){
+      hint.textContent = "B払い希望額 " + yen(desiredB) + " × プレミアム率(" + premium + "割 = ×" + multiplier.toFixed(2) + ") ＝ 受け取れる商品の定価合計 約" + yen(desiredB * multiplier);
+    }else{
+      hint.textContent = "";
+    }
+  }
+
+  // ---------- recompute on input change (so cash/premium/tax edits reflect live) ----------
+  ["input-premium","input-total-cash","input-desired-b","input-tax-rate"].forEach(id=>{
+    document.getElementById(id).addEventListener("input", ()=>{
+      finalPlans.forEach(fp=>{
+        fp.premium = num("input-premium");
+        fp.taxRate = num("input-tax-rate");
+        fp.totalCash = num("input-total-cash");
+        fp.desiredB = num("input-desired-b");
+      });
+      updatePremiumHint();
+      renderFinalPlans();
+      if(proposals.length) renderProposals();
+    });
+  });
+
+  // ---------- init ----------
+  renderProposals();
+  renderFinalPlans();
+  updatePremiumHint();
+  initProducts();
+})();
+</script>
+</body>
+</html>
