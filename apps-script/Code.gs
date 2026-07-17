@@ -40,12 +40,25 @@ function doPost(e) {
     return jsonOutput_({ error: "invalid_payload" });
   }
 
-  const sheet = getSheet_();
-  sheet.clearContents();
-  sheet.appendRow(HEADERS);
-  body.products.forEach(p => {
-    sheet.appendRow([p.id, p.name, p.price, p.quantity || 0, p.unit || ""]);
-  });
+  // 複数端末からほぼ同時に書き込まれても内容が混ざらないよう、書き込み中は他の
+  // 書き込みをロックで待たせる（これがないと行が重複・増殖することがある）。
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sheet = getSheet_();
+    const rows = [HEADERS].concat(
+      body.products.map(p => [p.id, p.name, p.price, p.quantity || 0, p.unit || ""])
+    );
+    const prevLastRow = sheet.getLastRow();
+    // 先に新データを書き込んでから余った古い行を消すことで、読み取り側が
+    // 一瞬「空」の状態を見てしまう(＝誤って再シードしてしまう)のを防ぐ。
+    sheet.getRange(1, 1, rows.length, HEADERS.length).setValues(rows);
+    if (prevLastRow > rows.length) {
+      sheet.getRange(rows.length + 1, 1, prevLastRow - rows.length, HEADERS.length).clearContent();
+    }
+  } finally {
+    lock.releaseLock();
+  }
 
   return jsonOutput_({ ok: true });
 }
