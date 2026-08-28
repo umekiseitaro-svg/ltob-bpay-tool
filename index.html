@@ -186,10 +186,10 @@
   <section id="section-calc">
     <h2>計算ツール</h2>
     <div class="field">
-      <label>B払いのプレミアム率</label>
+      <label>B払いの割引率</label>
       <div class="input-row">
         <input type="number" id="input-premium" step="0.1" min="0" value="0">
-        <span class="suffix">割　（例：3割2分 → 3.2　／　小数点1桁まで）</span>
+        <span class="suffix">割　（例：2割 → 2　／　小数点1桁まで）</span>
       </div>
     </div>
     <div class="field">
@@ -644,9 +644,13 @@
       alert("「そのうちB払いにしたい金額」を入力してください。");
       return;
     }
+    const discountRate = premium / 10;
+    if(discountRate <= 0){
+      alert("「B払いの割引率」を入力してください。");
+      return;
+    }
 
-    const multiplier = 1 + premium / 10;
-    const targetRawSum = desiredB * multiplier;
+    const targetRawSum = desiredB / discountRate;
 
     proposals = searchCombinations(selected, targetRawSum);
     renderProposals();
@@ -663,9 +667,9 @@
     }
 
     const premium = num("input-premium");
-    const multiplier = 1 + premium / 10;
+    const discountRate = premium / 10;
     const desiredB = num("input-desired-b");
-    const target = desiredB * multiplier;
+    const target = discountRate > 0 ? desiredB / discountRate : 0;
 
     proposals.forEach(prop=>{
       const closeEnough = target > 0 && Math.abs(prop.sum - target) / target < 0.05;
@@ -699,7 +703,7 @@
       meta.className = "meta";
       meta.innerHTML =
         '<span>受け取れる商品の定価合計：' + yen(prop.sum) + '</span>' +
-        '<span class="diff-badge' + (closeEnough ? ' close' : '') + '">目標（希望額×プレミアム）との差 ' + yenSigned(prop.sum - target) + '</span>';
+        '<span class="diff-badge' + (closeEnough ? ' close' : '') + '">目標（希望額÷割引率）との差 ' + yenSigned(prop.sum - target) + '</span>';
 
       body.appendChild(items);
       body.appendChild(meta);
@@ -735,10 +739,10 @@
 
   function computePlanNumbers(fp){
     // B払い = 受け取る商品の定価合計（fp.rawSum）。
-    // 現金 = すべて現金の場合の金額 - (受け取れる商品の定価合計からプレミアム利率分を差し引いた額)
-    const multiplier = 1 + fp.premium / 10;
+    // 現金支払い額 = すべて現金の場合の金額(税抜) − B払いでもらう商品の定価(税抜) × 割引率
+    const discountRate = fp.premium / 10;
     const bPay = fp.rawSum;
-    const baseValue = bPay / multiplier; // プレミアム利率分を差し引いた額
+    const baseValue = bPay * discountRate; // 現金から差し引かれる割引額
     const cashPortion = fp.totalCash - baseValue;
     const cashPortionClamped = Math.max(cashPortion, 0);
     const tax = Math.floor(cashPortionClamped * (fp.taxRate / 100));
@@ -865,7 +869,6 @@
     const fp = finalPlans[idx];
     const numbers = computePlanNumbers(fp);
     const negative = numbers.cashPortion < 0;
-    const multiplier = 1 + fp.premium / 10;
 
     const box = document.createElement("div");
     box.className = "estimate";
@@ -891,7 +894,7 @@
     const formula = document.createElement("div");
     formula.className = "bpay-formula";
     formula.innerHTML =
-      '(' + yen(fp.totalCash) + ' − ' + yen(negative ? 0 : numbers.cashPortion) + ' = ' + yen(numbers.baseValue) + ') × ' + fp.premium + '割 ＝ <strong>' + yen(numbers.bPay) + '</strong>';
+      '受け取る商品の定価 ' + yen(numbers.bPay) + ' × 割引率 ' + fp.premium + '割 ＝ 現金からの割引額 <strong>' + yen(numbers.baseValue) + '</strong>';
     bpayBlock.appendChild(formula);
 
     for(const pid in fp.combo){
@@ -913,10 +916,10 @@
   function updatePremiumHint(){
     const premium = num("input-premium");
     const desiredB = num("input-desired-b");
-    const multiplier = 1 + premium / 10;
+    const discountRate = premium / 10;
     const hint = document.getElementById("premium-hint");
-    if(desiredB > 0){
-      hint.textContent = "B払い希望額 " + yen(desiredB) + " × プレミアム率(" + premium + "割 = ×" + multiplier.toFixed(2) + ") ＝ 受け取れる商品の定価合計 約" + yen(desiredB * multiplier);
+    if(desiredB > 0 && discountRate > 0){
+      hint.textContent = "B払い希望額 " + yen(desiredB) + " ÷ 割引率(" + premium + "割 = " + discountRate.toFixed(2) + ") ＝ 必要な商品の定価合計 約" + yen(desiredB / discountRate);
     }else{
       hint.textContent = "";
     }
