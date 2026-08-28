@@ -110,6 +110,9 @@
     font-size:11px;padding:2px 8px;border-radius:99px;background:#f0f2f5;color:var(--sub);
   }
   .proposal .diff-badge.close{background:var(--ok-soft);color:var(--ok);}
+  .proposal .savings-badge{
+    font-size:11px;padding:2px 8px;border-radius:99px;background:var(--ok-soft);color:var(--ok);font-weight:700;
+  }
 
   .plan-card{
     border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:14px;
@@ -126,6 +129,7 @@
   .plan-grid .subtotal .label, .plan-grid .subtotal .value{font-weight:700;}
   .plan-grid .grand .label, .plan-grid .grand .value{font-weight:700;color:var(--accent-dark);font-size:16px;}
   .plan-grid .savings .label, .plan-grid .savings .value{color:var(--ok);font-weight:700;font-size:13px;}
+  .plan-grid .calc-note{grid-column:1/-1;font-size:11.5px;color:var(--sub);margin:-2px 0 4px;}
   .plan-breakdown{font-size:12.5px;color:var(--sub);margin:4px 0 2px;padding-left:2px;}
   .empty-hint{color:var(--sub);font-size:13px;padding:8px 2px;}
 
@@ -139,7 +143,7 @@
   .estimate .estimate-row.total{font-weight:700;border-bottom:none;border-top:1px solid var(--text);margin-top:2px;padding-top:8px;}
   .estimate .bpay-formula{font-size:13px;color:var(--sub);margin:6px 0 8px;}
   .estimate .bpay-formula strong{color:var(--text);}
-  .estimate .estimate-line{display:flex;justify-content:space-between;font-size:13.5px;padding:3px 2px 3px 12px;color:var(--text);}
+  .estimate .estimate-line-name{font-size:13.5px;color:var(--text);font-weight:600;margin-top:12px;}
   .estimate .plan-tag{display:inline-block;font-size:12px;font-weight:700;color:var(--accent-dark);background:var(--accent-soft);border-radius:6px;padding:2px 8px;margin-bottom:12px;}
 
   .chosen-banner{
@@ -206,7 +210,6 @@
         <input type="number" id="input-desired-b" step="1" min="0">
         <span class="suffix">円</span>
       </div>
-      <p class="note" id="premium-hint" style="margin-top:8px;"></p>
     </div>
     <div class="field">
       <label>消費税率</label>
@@ -271,7 +274,8 @@
   let nextProductId = 100;
   let products = [];
   let desiredProductIds = new Set(); // default: none selected
-  let proposals = []; // {sig, sum, count, combo:{productId:qty}, diff}
+  let proposals = []; // {sig, netSum, rawSum, count, combo:{productId:qty}, diff}
+  let hasSearched = false;
   let adoptedSigs = new Set(); // proposal.sig currently checked "採用"
   let finalPlans = []; // {id, label, sig, combo, rawSum, premium, taxRate, totalCash, desiredB, chosen}
   let nextPlanId = 1;
@@ -571,13 +575,21 @@
   }
 
   // ---------- combination search ----------
-  function searchCombinations(selectedProducts, target){
-    if(target <= 0 || selectedProducts.length === 0) return [];
-    const cheapest = Math.min(...selectedProducts.map(p=>p.price).filter(x=>x>0));
-    if(!isFinite(cheapest) || cheapest <= 0) return [];
+  // 【そのうちB払いにしたい金額】は「割引額」ではなく「定価から割引いた後の金額」
+  // （＝ 定価 ×（1－割引率））。【B商品価格リスト】の各商品の価格にこれを当てはめた値を
+  // 元に、その合計が【そのうちB払いにしたい金額】から ±MATCH_WINDOW 円くらいになる組み合わせを探す。
+  const MATCH_WINDOW = 10000;
+
+  function searchCombinations(selectedProducts, target, discountRate){
+    if(target <= 0 || selectedProducts.length === 0 || discountRate >= 1) return [];
+
+    const withAdjusted = selectedProducts
+      .map(p => ({ ...p, netPrice: Math.round(p.price * (1 - discountRate)) }))
+      .filter(p => p.netPrice > 0);
+    if(withAdjusted.length === 0) return [];
 
     const maxSum = Math.min(
-      Math.ceil(target * 1.6) + Math.max(...selectedProducts.map(p=>p.price)),
+      target + MATCH_WINDOW + Math.max(...withAdjusted.map(p=>p.netPrice)),
       500000
     );
 
@@ -587,14 +599,14 @@
 
     for(let s = 1; s <= maxSum; s++){
       let bestCount = Infinity, bestProduct = null;
-      for(const p of selectedProducts){
-        if(p.price > 0 && p.price <= s && dp[s - p.price]){
-          const c = dp[s - p.price].count + 1;
+      for(const p of withAdjusted){
+        if(p.netPrice <= s && dp[s - p.netPrice]){
+          const c = dp[s - p.netPrice].count + 1;
           if(c < bestCount){ bestCount = c; bestProduct = p; }
         }
       }
       if(bestProduct){
-        dp[s] = {count:bestCount, viaProduct:bestProduct.id, prevSum:s - bestProduct.price};
+        dp[s] = {count:bestCount, viaProduct:bestProduct.id, prevSum:s - bestProduct.netPrice};
       }
     }
 
@@ -612,10 +624,13 @@
     const candidates = [];
     for(let s = 1; s <= maxSum; s++){
       if(dp[s]){
-        candidates.push({sum:s, count:dp[s].count, diff:Math.abs(s - target)});
+        const diff = s - target;
+        if(Math.abs(diff) <= MATCH_WINDOW){
+          candidates.push({sum:s, count:dp[s].count, diff});
+        }
       }
     }
-    candidates.sort((a,b)=> a.diff - b.diff || a.count - b.count);
+    candidates.sort((a,b)=> Math.abs(a.diff) - Math.abs(b.diff) || a.count - b.count);
 
     const results = [];
     const seen = new Set();
@@ -625,7 +640,8 @@
       if(seen.has(sig)) continue;
       seen.add(sig);
       if(isComboDominated(combo)) continue;
-      results.push({sig, sum:c.sum, count:c.count, combo, diff:c.diff});
+      const rawSum = comboRawSum(combo);
+      results.push({sig, netSum:c.sum, rawSum, count:c.count, combo, diff:c.diff});
       if(results.length >= 6) break;
     }
     return results;
@@ -645,14 +661,13 @@
       return;
     }
     const discountRate = premium / 10;
-    if(discountRate <= 0){
-      alert("「B払いの割引率」を入力してください。");
+    if(discountRate <= 0 || discountRate >= 1){
+      alert("「B払いの割引率」を正しく入力してください（0割より大きく10割未満）。");
       return;
     }
 
-    const targetRawSum = desiredB / discountRate;
-
-    proposals = searchCombinations(selected, targetRawSum);
+    proposals = searchCombinations(selected, desiredB, discountRate);
+    hasSearched = true;
     renderProposals();
   }
   document.getElementById("btn-search").addEventListener("click", runSearch);
@@ -662,17 +677,16 @@
     holder.innerHTML = "";
 
     if(proposals.length === 0){
-      holder.innerHTML = '<div class="empty-hint">まだ提案がありません。「ほしい商品」を選択して「組み合わせを提案する」を押してください。</div>';
+      holder.innerHTML = hasSearched
+        ? '<div class="empty-hint">希望額±' + MATCH_WINDOW.toLocaleString("ja-JP") + '円くらいの組み合わせが見つかりませんでした。商品の選択や金額を見直してください。</div>'
+        : '<div class="empty-hint">まだ提案がありません。「ほしい商品」を選択して「組み合わせを提案する」を押してください。</div>';
       return;
     }
 
-    const premium = num("input-premium");
-    const discountRate = premium / 10;
     const desiredB = num("input-desired-b");
-    const target = discountRate > 0 ? desiredB / discountRate : 0;
 
     proposals.forEach(prop=>{
-      const closeEnough = target > 0 && Math.abs(prop.sum - target) / target < 0.05;
+      const closeEnough = Math.abs(prop.diff) <= MATCH_WINDOW / 2;
 
       const wrap = document.createElement("div");
       wrap.className = "proposal" + (adoptedSigs.has(prop.sig) ? " adopted" : "");
@@ -702,8 +716,10 @@
       const meta = document.createElement("div");
       meta.className = "meta";
       meta.innerHTML =
-        '<span>受け取れる商品の定価合計：' + yen(prop.sum) + '</span>' +
-        '<span class="diff-badge' + (closeEnough ? ' close' : '') + '">目標（希望額÷割引率）との差 ' + yenSigned(prop.sum - target) + '</span>';
+        '<span>受け取れる商品の定価合計：' + yen(prop.rawSum) + '</span>' +
+        '<span>割引済み金額：' + yen(prop.netSum) + '</span>' +
+        '<span class="savings-badge">' + yen(prop.rawSum - prop.netSum) + ' お得！</span>' +
+        '<span class="diff-badge' + (closeEnough ? ' close' : '') + '">希望額との差 ' + yenSigned(prop.diff) + '</span>';
 
       body.appendChild(items);
       body.appendChild(meta);
@@ -725,7 +741,7 @@
       id: nextPlanId++,
       sig: prop.sig,
       combo: prop.combo,
-      rawSum: prop.sum,
+      rawSum: prop.rawSum,
       premium: num("input-premium"),
       taxRate: num("input-tax-rate"),
       totalCash: num("input-total-cash"),
@@ -738,20 +754,25 @@
   }
 
   function computePlanNumbers(fp){
-    // B払い = 受け取る商品の定価合計（fp.rawSum）。
-    // 現金支払い額 = すべて現金の場合の金額(税抜) − B払いでもらう商品の定価(税抜) × 割引率
+    // B払い定価 = 受取商品の定価合計
+    // B払い割引額 = B払い定価 × 割引率
+    // B払い 合計（小計） = B払い定価 − B払い割引額
+    // 現金 = すべて現金の場合の金額 − B払い小計 　※これにより現金は必ずすべて現金の場合の金額以下になる
+    // 消費税 = 現金 × 消費税率
+    // 現金 合計 = 現金 + 消費税
     const discountRate = fp.premium / 10;
     const bPay = fp.rawSum;
-    const baseValue = bPay * discountRate; // 現金から差し引かれる割引額
-    const cashPortion = fp.totalCash - baseValue;
+    const baseValue = bPay * discountRate; // B払い割引額
+    const bPaySubtotal = bPay - baseValue; // B払い 合計
+    const cashPortion = fp.totalCash - bPaySubtotal;
     const cashPortionClamped = Math.max(cashPortion, 0);
     const tax = Math.floor(cashPortionClamped * (fp.taxRate / 100));
-    const subtotal = cashPortionClamped + tax;
+    const subtotal = cashPortionClamped + tax; // 現金 合計
     const grandTotal = subtotal + bPay;
-    // お得 = その案の総計 − すべて現金の場合の金額 + (すべて現金の場合の消費税額 − その案の消費税額)
     const allCashTax = fp.totalCash * (fp.taxRate / 100);
-    const savings = grandTotal - fp.totalCash + (allCashTax - tax);
-    return {bPay, baseValue, cashPortion, tax, subtotal, grandTotal, allCashTax, savings};
+    const savingsGoods = baseValue + bPay * (fp.taxRate / 100); // すべて現金払いの場合とくらべてお得な金額 = 割引額 + (定価 × 消費税率)
+    const savingsTax = allCashTax - tax; // 消費税のお得
+    return {bPay, baseValue, bPaySubtotal, cashPortion, tax, subtotal, grandTotal, allCashTax, savingsGoods, savingsTax};
   }
 
   function renderFinalPlans(){
@@ -812,15 +833,20 @@
       const grid = document.createElement("div");
       grid.className = "plan-grid";
       grid.innerHTML =
+        row("B払い定価", yen(numbers.bPay)) +
+        row("B払い割引額", yen(numbers.baseValue)) +
+        divider() +
+        row("B払い 合計", yen(numbers.bPaySubtotal), "subtotal") +
+        divider() +
         row("現金", yen(negative ? 0 : numbers.cashPortion)) +
         row("消費税", yen(negative ? 0 : numbers.tax)) +
         divider() +
-        row("小計", yen(negative ? 0 : numbers.subtotal), "subtotal") +
+        row("現金 合計", yen(negative ? 0 : numbers.subtotal), "subtotal") +
         divider() +
-        row("B払い（受取商品の定価合計）", yen(numbers.bPay)) +
-        divider() +
-        row("総計", yen(numbers.grandTotal) + " 分", "grand") +
-        row("すべて現金払いの場合とくらべて", yen(numbers.savings) + " お得!!", "savings");
+        row("すべて現金払いの場合とくらべて", yen(numbers.savingsGoods) + " お得!!", "savings") +
+        calcNote("B払い割引額 " + yen(numbers.baseValue) + " ＋（B払い定価 " + yen(numbers.bPay) + " × 消費税率 " + fp.taxRate + "%） ＝ " + yen(numbers.savingsGoods)) +
+        row("お店が支払う消費税は", yen(numbers.savingsTax) + " お得!!", "savings") +
+        calcNote("すべて現金の場合の消費税額 " + yen(numbers.allCashTax) + " − 実際に支払う消費税額 " + yen(negative ? 0 : numbers.tax) + " ＝ " + yen(numbers.savingsTax));
 
       card.appendChild(head);
       if(negative){
@@ -842,6 +868,7 @@
              '<div class="value' + (extraClass ? ' ' + extraClass : '') + '">' + value + '</div>';
     }
     function divider(){ return '<div class="divider"></div>'; }
+    function calcNote(text){ return '<div class="calc-note">' + text + '</div>'; }
   }
 
   function renderChosenBanner(){
@@ -891,38 +918,41 @@
     bpayBlock.className = "estimate-block";
     bpayBlock.innerHTML = '<h3>B払い</h3>';
 
+    const discountRate = fp.premium / 10;
+    for(const pid in fp.combo){
+      const p = products.find(x => x.id === Number(pid));
+      if(!p) continue;
+      const qty = fp.combo[pid];
+      const lineTotal = p.price * qty;
+      const lineNet = lineTotal * (1 - discountRate);
+
+      const nameHeader = document.createElement("div");
+      nameHeader.className = "estimate-line-name";
+      nameHeader.textContent = p.name + " × " + qty;
+      bpayBlock.appendChild(nameHeader);
+
+      const rows = document.createElement("div");
+      rows.innerHTML =
+        '<div class="estimate-row"><span>定価</span><span>' + yen(lineTotal) + '</span></div>' +
+        '<div class="estimate-row"><span>割引率</span><span>' + fp.premium + '割</span></div>' +
+        '<div class="estimate-row"><span>割引済金額</span><span>' + yen(lineNet) + '</span></div>';
+      bpayBlock.appendChild(rows);
+    }
+
+    const bpayTotal = document.createElement("div");
+    bpayTotal.innerHTML =
+      '<div class="estimate-row total"><span>総計</span><span>' + yen(numbers.bPaySubtotal) + '</span></div>';
+    bpayBlock.appendChild(bpayTotal);
+
     const formula = document.createElement("div");
     formula.className = "bpay-formula";
     formula.innerHTML =
       '受け取る商品の定価 ' + yen(numbers.bPay) + ' × 割引率 ' + fp.premium + '割 ＝ 現金からの割引額 <strong>' + yen(numbers.baseValue) + '</strong>';
     bpayBlock.appendChild(formula);
 
-    for(const pid in fp.combo){
-      const p = products.find(x => x.id === Number(pid));
-      if(!p) continue;
-      const qty = fp.combo[pid];
-      const lineTotal = p.price * qty;
-      const line = document.createElement("div");
-      line.className = "estimate-line";
-      line.innerHTML = '<span>' + p.name + ' × ' + qty + '</span><span>' + yen(lineTotal) + '</span>';
-      bpayBlock.appendChild(line);
-    }
     box.appendChild(bpayBlock);
 
     holder.appendChild(box);
-  }
-
-  // ---------- premium hint ----------
-  function updatePremiumHint(){
-    const premium = num("input-premium");
-    const desiredB = num("input-desired-b");
-    const discountRate = premium / 10;
-    const hint = document.getElementById("premium-hint");
-    if(desiredB > 0 && discountRate > 0){
-      hint.textContent = "B払い希望額 " + yen(desiredB) + " ÷ 割引率(" + premium + "割 = " + discountRate.toFixed(2) + ") ＝ 必要な商品の定価合計 約" + yen(desiredB / discountRate);
-    }else{
-      hint.textContent = "";
-    }
   }
 
   // ---------- recompute on input change (so cash/premium/tax edits reflect live) ----------
@@ -934,7 +964,6 @@
         fp.totalCash = num("input-total-cash");
         fp.desiredB = num("input-desired-b");
       });
-      updatePremiumHint();
       renderFinalPlans();
       if(proposals.length) renderProposals();
     });
@@ -943,7 +972,6 @@
   // ---------- init ----------
   renderProposals();
   renderFinalPlans();
-  updatePremiumHint();
   initProducts();
 })();
 </script>
