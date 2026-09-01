@@ -60,11 +60,14 @@
   table{width:100%;min-width:520px;border-collapse:collapse;font-size:14px;}
   th,td{padding:8px 6px;border-bottom:1px solid var(--border);text-align:left;}
   th{font-size:12px;color:var(--sub);font-weight:600;}
-  td input[type=text], td input[type=number]{
-    width:100%;border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:14px;
+  td input[type=text], td input[type=number], td select{
+    width:100%;border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:14px;background:#fff;
   }
   td.num{text-align:right;}
   td.num input{text-align:right;}
+  .field select, .input-row select{
+    border:1px solid var(--border);border-radius:8px;padding:9px 10px;font-size:15px;background:#fff;
+  }
   .row-actions{white-space:nowrap;}
   .btn{
     border:1px solid var(--border);background:#fff;border-radius:8px;
@@ -167,15 +170,16 @@
 
   <section id="section-products">
     <h2>B商品価格リスト</h2>
-    <p class="note">商品名・価格は自由に編集・追加・削除できます。「数量」「単位」を入力すると、同じ単位の商品同士で割高な組み合わせ（例：1000粒×2 は 2000粒×1 より高い）を提案から自動的に除外します。粒・原液量などのない商品は空欄のままで構いません。</p>
+    <p class="note">商品名・価格は自由に編集・追加・削除できます。「数量」「単位」を入力すると、同じ単位の商品同士で割高な組み合わせ（例：1000粒×2 は 2000粒×1 より高い）を提案から自動的に除外します。「サイズ」は1個あたりの配送サイズ換算値で、送料のサイズ区分の自動計算に使われます。いずれも空欄のままで構いません。</p>
     <p class="note" id="sync-status"></p>
     <div class="table-scroll">
       <table>
         <thead><tr>
           <th style="width:180px;">商品名</th>
-          <th style="width:120px;">価格（円）</th>
-          <th style="width:90px;">数量</th>
-          <th style="width:80px;">単位</th>
+          <th style="width:110px;">価格（円）</th>
+          <th style="width:80px;">数量</th>
+          <th style="width:70px;">単位</th>
+          <th style="width:80px;">サイズ</th>
           <th style="width:60px;"></th>
         </tr></thead>
         <tbody id="product-tbody"></tbody>
@@ -184,6 +188,27 @@
     <div class="toolbar">
       <button class="btn" id="btn-add-product">＋ 商品を追加</button>
       <button class="btn" id="btn-reset-products">初期リストに戻す</button>
+    </div>
+  </section>
+
+  <section id="section-shipping">
+    <h2>送料設定</h2>
+    <p class="note">「発地」「サイズ」「地域」の組み合わせごとに送料を登録します。必要な組み合わせだけ登録すればよく、全マス埋める必要はありません（この端末に保存されます）。</p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr>
+          <th style="width:140px;">発地</th>
+          <th style="width:100px;">サイズ</th>
+          <th style="width:140px;">地域</th>
+          <th style="width:110px;">送料（円）</th>
+          <th style="width:60px;"></th>
+        </tr></thead>
+        <tbody id="shipping-tbody"></tbody>
+      </table>
+    </div>
+    <div class="toolbar">
+      <button class="btn" id="btn-add-shipping">＋ 組み合わせを追加</button>
+      <button class="btn" id="btn-reset-shipping">初期リストに戻す</button>
     </div>
   </section>
 
@@ -217,6 +242,20 @@
         <input type="number" id="input-tax-rate" step="1" min="0" max="100" value="10" style="width:100px;">
         <span class="suffix">％　※現金部分にのみ課税。B払い部分は非課税。</span>
       </div>
+    </div>
+    <div class="field">
+      <label>発送元</label>
+      <div class="input-row">
+        <select id="input-shipping-origin"></select>
+      </div>
+    </div>
+    <div class="field">
+      <label>配送先地域</label>
+      <div class="input-row">
+        <select id="input-shipping-region"></select>
+      </div>
+      <p class="note" id="shipping-fee-display" style="margin-top:8px;"></p>
+      <p class="note" style="margin-top:0;">※サイズは、採用したB払いの組み合わせ（商品×個数）から自動計算されます。送料は現金扱いで、消費税がかかります（B払いの対象外）。</p>
     </div>
   </section>
 
@@ -262,23 +301,35 @@
   const REMOTE_API_TOKEN = "YGfcWJDnrN8fXEs2m4ru0AOGFR-z63KW";
 
   const DEFAULT_PRODUCTS = [
-    {id:1, name:"500粒", price:5157, quantity:500, unit:"粒"},
-    {id:2, name:"1000粒", price:9880, quantity:1000, unit:"粒"},
-    {id:3, name:"2000粒", price:17700, quantity:2000, unit:"粒"},
-    {id:4, name:"BCEx 原液 50ml", price:4278, quantity:50, unit:"ml"},
-    {id:5, name:"BCEx 原液 400ml", price:26700, quantity:400, unit:"ml"},
-    {id:6, name:"BCEx ドリンク", price:1100, quantity:0, unit:""},
-    {id:7, name:"BCEx 503", price:3200, quantity:0, unit:""},
+    {id:1, name:"500粒", price:5157, quantity:500, unit:"粒", size:0},
+    {id:2, name:"1000粒", price:9880, quantity:1000, unit:"粒", size:0},
+    {id:3, name:"2000粒", price:17700, quantity:2000, unit:"粒", size:0},
+    {id:4, name:"BCEx 原液 50ml", price:4278, quantity:50, unit:"ml", size:0},
+    {id:5, name:"BCEx 原液 400ml", price:26700, quantity:400, unit:"ml", size:0},
+    {id:6, name:"BCEx ドリンク", price:1100, quantity:0, unit:"", size:0},
+    {id:7, name:"BCEx 503", price:3200, quantity:0, unit:"", size:0},
   ];
 
   let nextProductId = 100;
   let products = [];
   let desiredProductIds = new Set(); // default: none selected
-  let proposals = []; // {sig, netSum, rawSum, count, combo:{productId:qty}, diff}
+  let proposals = []; // {sig, netSum, rawSum, totalSize, count, combo:{productId:qty}, diff}
   let hasSearched = false;
   let adoptedSigs = new Set(); // proposal.sig currently checked "採用"
-  let finalPlans = []; // {id, label, sig, combo, rawSum, premium, taxRate, totalCash, desiredB, chosen}
+  let finalPlans = []; // {id, label, sig, combo, rawSum, totalSize, premium, taxRate, totalCash, desiredB, shippingOrigin, shippingRegion, chosen}
   let nextPlanId = 1;
+
+  // ---------- shipping rates ----------
+  const SHIPPING_STORAGE_KEY = "ltob_bpay_shipping_v2";
+  const SIZE_BRACKETS = [60, 80, 100, 120, 140, 160, 180, 200];
+  const DEFAULT_SHIPPING_RATES = [
+    {id:1, origin:"本社", size:60, region:"関東", fee:800},
+    {id:2, origin:"本社", size:60, region:"関西", fee:1000},
+    {id:3, origin:"本社", size:60, region:"北海道・沖縄", fee:1500},
+    {id:4, origin:"本社", size:60, region:"その他", fee:1000},
+  ];
+  let shippingRates = [];
+  let nextShippingId = 100;
 
   // ---------- storage ----------
   function recomputeNextProductId(){
@@ -303,7 +354,8 @@
       name: String(p.name || ""),
       price: Number(p.price) || 0,
       quantity: Number(p.quantity) || 0,
-      unit: String(p.unit || "")
+      unit: String(p.unit || ""),
+      size: Number(p.size) || 0
     }));
   }
 
@@ -402,6 +454,14 @@
     }
     return s;
   }
+  function comboTotalSize(combo){
+    let s = 0;
+    for(const pid in combo){
+      const p = products.find(p=>p.id === Number(pid));
+      if(p) s += (p.size || 0) * combo[pid];
+    }
+    return s;
+  }
   function comboText(combo){
     const parts = [];
     for(const pid in combo){
@@ -463,6 +523,19 @@
       });
       tdUnit.appendChild(unitInput);
 
+      const tdSize = document.createElement("td");
+      const sizeInput = document.createElement("input");
+      sizeInput.type = "number";
+      sizeInput.step = "1";
+      sizeInput.min = "0";
+      sizeInput.placeholder = "任意";
+      sizeInput.value = p.size || "";
+      sizeInput.addEventListener("input", ()=>{
+        p.size = parseFloat(sizeInput.value) || 0;
+        saveProducts();
+      });
+      tdSize.appendChild(sizeInput);
+
       const tdActions = document.createElement("td");
       tdActions.className = "row-actions";
       const delBtn = document.createElement("button");
@@ -481,13 +554,14 @@
       tr.appendChild(tdPrice);
       tr.appendChild(tdQty);
       tr.appendChild(tdUnit);
+      tr.appendChild(tdSize);
       tr.appendChild(tdActions);
       tbody.appendChild(tr);
     });
   }
 
   document.getElementById("btn-add-product").addEventListener("click", ()=>{
-    const newProduct = {id: nextProductId++, name:"新規商品", price:0, quantity:0, unit:""};
+    const newProduct = {id: nextProductId++, name:"新規商品", price:0, quantity:0, unit:"", size:0};
     products.push(newProduct);
     saveProducts();
     renderProductTable();
@@ -501,6 +575,185 @@
     saveProducts();
     renderProductTable();
     renderDesiredChecklist();
+  });
+
+  // ---------- shipping rate table ----------
+  function recomputeNextShippingId(){
+    nextShippingId = shippingRates.length ? Math.max(...shippingRates.map(r=>r.id)) + 1 : 100;
+  }
+  function loadShippingRates(){
+    try{
+      const raw = localStorage.getItem(SHIPPING_STORAGE_KEY);
+      if(raw){
+        const parsed = JSON.parse(raw);
+        if(Array.isArray(parsed) && parsed.length) return parsed;
+      }
+    }catch(e){}
+    return DEFAULT_SHIPPING_RATES.map(r=>({...r}));
+  }
+  function saveShippingRates(){
+    try{ localStorage.setItem(SHIPPING_STORAGE_KEY, JSON.stringify(shippingRates)); }catch(e){}
+  }
+
+  function renderShippingTable(){
+    const tbody = document.getElementById("shipping-tbody");
+    tbody.innerHTML = "";
+    shippingRates.forEach(r=>{
+      const tr = document.createElement("tr");
+
+      const tdOrigin = document.createElement("td");
+      const originInput = document.createElement("input");
+      originInput.type = "text";
+      originInput.value = r.origin;
+      originInput.addEventListener("input", ()=>{
+        r.origin = originInput.value;
+        saveShippingRates();
+        renderShippingSelectors();
+      });
+      tdOrigin.appendChild(originInput);
+
+      const tdSize = document.createElement("td");
+      const sizeSelect = document.createElement("select");
+      SIZE_BRACKETS.forEach(sz=>{
+        const opt = document.createElement("option");
+        opt.value = sz;
+        opt.textContent = sz + "サイズ";
+        sizeSelect.appendChild(opt);
+      });
+      sizeSelect.value = r.size;
+      sizeSelect.addEventListener("change", ()=>{
+        r.size = Number(sizeSelect.value);
+        saveShippingRates();
+        renderShippingSelectors();
+      });
+      tdSize.appendChild(sizeSelect);
+
+      const tdRegion = document.createElement("td");
+      const regionInput = document.createElement("input");
+      regionInput.type = "text";
+      regionInput.value = r.region;
+      regionInput.addEventListener("input", ()=>{
+        r.region = regionInput.value;
+        saveShippingRates();
+        renderShippingSelectors();
+      });
+      tdRegion.appendChild(regionInput);
+
+      const tdFee = document.createElement("td");
+      tdFee.className = "num";
+      const feeInput = document.createElement("input");
+      feeInput.type = "number";
+      feeInput.step = "1";
+      feeInput.min = "0";
+      feeInput.value = r.fee;
+      feeInput.addEventListener("input", ()=>{
+        r.fee = parseFloat(feeInput.value) || 0;
+        saveShippingRates();
+        renderShippingSelectors();
+      });
+      tdFee.appendChild(feeInput);
+
+      const tdActions = document.createElement("td");
+      tdActions.className = "row-actions";
+      const delBtn = document.createElement("button");
+      delBtn.className = "btn small danger";
+      delBtn.textContent = "削除";
+      delBtn.addEventListener("click", ()=>{
+        shippingRates = shippingRates.filter(x=>x.id !== r.id);
+        saveShippingRates();
+        renderShippingTable();
+        renderShippingSelectors();
+      });
+      tdActions.appendChild(delBtn);
+
+      tr.appendChild(tdOrigin);
+      tr.appendChild(tdSize);
+      tr.appendChild(tdRegion);
+      tr.appendChild(tdFee);
+      tr.appendChild(tdActions);
+      tbody.appendChild(tr);
+    });
+  }
+
+  function renderShippingSelectors(){
+    const origins = [...new Set(shippingRates.map(r=>r.origin))];
+    const regions = [...new Set(shippingRates.map(r=>r.region))];
+
+    const originSelect = document.getElementById("input-shipping-origin");
+    const prevOrigin = originSelect.value;
+    originSelect.innerHTML = origins.length
+      ? origins.map(o=>'<option value="' + escapeHtml(o) + '">' + escapeHtml(o) + '</option>').join("")
+      : '<option value="">（発地未設定）</option>';
+    if(origins.includes(prevOrigin)) originSelect.value = prevOrigin;
+
+    const regionSelect = document.getElementById("input-shipping-region");
+    const prevRegion = regionSelect.value;
+    regionSelect.innerHTML = regions.length
+      ? regions.map(r=>'<option value="' + escapeHtml(r) + '">' + escapeHtml(r) + '</option>').join("")
+      : '<option value="">（地域未設定）</option>';
+    if(regions.includes(prevRegion)) regionSelect.value = prevRegion;
+
+    updateShippingFeeDisplay();
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  }
+
+  function roundToSizeBracket(totalSize){
+    for(const sz of SIZE_BRACKETS){
+      if(totalSize <= sz) return sz;
+    }
+    return SIZE_BRACKETS[SIZE_BRACKETS.length - 1];
+  }
+
+  function getShippingFeeFor(origin, size, region){
+    const rate = shippingRates.find(r => r.origin === origin && r.size === size && r.region === region);
+    return rate ? rate.fee : null;
+  }
+
+  function updateShippingFeeDisplay(){
+    const display = document.getElementById("shipping-fee-display");
+    const origin = document.getElementById("input-shipping-origin").value;
+    const region = document.getElementById("input-shipping-region").value;
+    const matches = shippingRates.filter(r => r.origin === origin && r.region === region);
+    if(!origin || !region){
+      display.textContent = "";
+    }else if(matches.length === 0){
+      display.textContent = "※この発地・地域の組み合わせはまだ登録されていません。";
+    }else{
+      const list = matches
+        .slice().sort((a,b)=>a.size-b.size)
+        .map(r => r.size + "サイズ: " + yen(r.fee))
+        .join("　/　");
+      display.textContent = "登録済み送料　" + list;
+    }
+  }
+
+  document.getElementById("btn-add-shipping").addEventListener("click", ()=>{
+    const newRate = {id: nextShippingId++, origin:"本社", size:60, region:"新規地域", fee:0};
+    shippingRates.push(newRate);
+    saveShippingRates();
+    renderShippingTable();
+    renderShippingSelectors();
+  });
+  document.getElementById("btn-reset-shipping").addEventListener("click", ()=>{
+    if(!confirm("送料設定を初期状態に戻します。よろしいですか？")) return;
+    shippingRates = DEFAULT_SHIPPING_RATES.map(r=>({...r}));
+    nextShippingId = 100;
+    saveShippingRates();
+    renderShippingTable();
+    renderShippingSelectors();
+  });
+  ["input-shipping-origin","input-shipping-region"].forEach(id=>{
+    document.getElementById(id).addEventListener("change", ()=>{
+      updateShippingFeeDisplay();
+      finalPlans.forEach(fp=>{
+        fp.shippingOrigin = document.getElementById("input-shipping-origin").value;
+        fp.shippingRegion = document.getElementById("input-shipping-region").value;
+      });
+      renderFinalPlans();
+    });
   });
   document.getElementById("btn-select-all").addEventListener("click", ()=>{
     desiredProductIds = new Set(products.map(p=>p.id));
@@ -641,7 +894,8 @@
       seen.add(sig);
       if(isComboDominated(combo)) continue;
       const rawSum = comboRawSum(combo);
-      results.push({sig, netSum:c.sum, rawSum, count:c.count, combo, diff:c.diff});
+      const totalSize = comboTotalSize(combo);
+      results.push({sig, netSum:c.sum, rawSum, totalSize, count:c.count, combo, diff:c.diff});
       if(results.length >= 6) break;
     }
     return results;
@@ -742,10 +996,13 @@
       sig: prop.sig,
       combo: prop.combo,
       rawSum: prop.rawSum,
+      totalSize: prop.totalSize,
       premium: num("input-premium"),
       taxRate: num("input-tax-rate"),
       totalCash: num("input-total-cash"),
       desiredB: num("input-desired-b"),
+      shippingOrigin: document.getElementById("input-shipping-origin").value,
+      shippingRegion: document.getElementById("input-shipping-region").value,
       chosen: false
     });
   }
@@ -757,22 +1014,28 @@
     // B払い定価 = 受取商品の定価合計
     // B払い割引額 = B払い定価 × 割引率
     // B払い 合計（小計） = B払い定価 − B払い割引額
-    // 現金 = すべて現金の場合の金額 − B払い小計 　※これにより現金は必ずすべて現金の場合の金額以下になる
-    // 消費税 = 現金 × 消費税率
-    // 現金 合計 = 現金 + 消費税
+    // 現金（商品分） = すべて現金の場合の金額 − B払い小計 　※これにより現金（商品分）は必ずすべて現金の場合の金額以下になる
+    // 送料は現金扱い・消費税あり（B払いの対象外）。商品分の現金に加算してから消費税を計算する。
+    // 消費税 = （現金（商品分） + 送料） × 消費税率
+    // 現金 合計 = 現金（商品分） + 送料 + 消費税
     const discountRate = fp.premium / 10;
     const bPay = fp.rawSum;
     const baseValue = bPay * discountRate; // B払い割引額
     const bPaySubtotal = bPay - baseValue; // B払い 合計
-    const cashPortion = fp.totalCash - bPaySubtotal;
+    const cashPortion = fp.totalCash - bPaySubtotal; // 現金（商品分）
     const cashPortionClamped = Math.max(cashPortion, 0);
-    const tax = Math.floor(cashPortionClamped * (fp.taxRate / 100));
-    const subtotal = cashPortionClamped + tax; // 現金 合計
+    const sizeBracket = roundToSizeBracket(fp.totalSize || 0);
+    const shippingFeeFound = getShippingFeeFor(fp.shippingOrigin, sizeBracket, fp.shippingRegion);
+    const shippingFee = shippingFeeFound || 0;
+    const shippingRateMissing = shippingFeeFound === null;
+    const taxableCash = cashPortionClamped + shippingFee;
+    const tax = Math.floor(taxableCash * (fp.taxRate / 100));
+    const subtotal = taxableCash + tax; // 現金 合計
     const grandTotal = subtotal + bPay;
-    const allCashTax = fp.totalCash * (fp.taxRate / 100);
+    const allCashTax = (fp.totalCash + shippingFee) * (fp.taxRate / 100);
     const savingsGoods = baseValue + bPay * (fp.taxRate / 100); // すべて現金払いの場合とくらべてお得な金額 = 割引額 + (定価 × 消費税率)
     const savingsTax = allCashTax - tax; // 消費税のお得
-    return {bPay, baseValue, bPaySubtotal, cashPortion, tax, subtotal, grandTotal, allCashTax, savingsGoods, savingsTax};
+    return {bPay, baseValue, bPaySubtotal, cashPortion, sizeBracket, shippingFee, shippingRateMissing, tax, subtotal, grandTotal, allCashTax, savingsGoods, savingsTax};
   }
 
   function renderFinalPlans(){
@@ -838,7 +1101,8 @@
         divider() +
         row("B払い 合計", yen(numbers.bPaySubtotal), "subtotal") +
         divider() +
-        row("現金", yen(negative ? 0 : numbers.cashPortion)) +
+        row("現金（商品分）", yen(negative ? 0 : numbers.cashPortion)) +
+        row("送料（税抜・" + numbers.sizeBracket + "サイズ）", yen(numbers.shippingFee)) +
         row("消費税", yen(negative ? 0 : numbers.tax)) +
         divider() +
         row("現金 合計", yen(negative ? 0 : numbers.subtotal), "subtotal") +
@@ -853,6 +1117,12 @@
         const warn = document.createElement("p");
         warn.className = "note warn";
         warn.textContent = "⚠ B払い希望額が「すべて現金の場合の金額」を超えています。金額を見直してください。";
+        card.appendChild(warn);
+      }
+      if(numbers.shippingRateMissing){
+        const warn = document.createElement("p");
+        warn.className = "note warn";
+        warn.textContent = "⚠ 発地「" + (fp.shippingOrigin || "未設定") + "」・" + numbers.sizeBracket + "サイズ・地域「" + (fp.shippingRegion || "未設定") + "」の送料が登録されていません（0円として計算中）。「送料設定」に追加してください。";
         card.appendChild(warn);
       }
       card.appendChild(breakdown);
@@ -909,7 +1179,8 @@
     cashBlock.className = "estimate-block";
     cashBlock.innerHTML =
       '<h3>現金</h3>' +
-      '<div class="estimate-row"><span>税抜</span><span>' + yen(negative ? 0 : numbers.cashPortion) + '</span></div>' +
+      '<div class="estimate-row"><span>税抜（商品分）</span><span>' + yen(negative ? 0 : numbers.cashPortion) + '</span></div>' +
+      '<div class="estimate-row"><span>送料（税抜・' + numbers.sizeBracket + 'サイズ）</span><span>' + yen(numbers.shippingFee) + '</span></div>' +
       '<div class="estimate-row"><span>消費税</span><span>' + yen(negative ? 0 : numbers.tax) + '</span></div>' +
       '<div class="estimate-row total"><span>総額（税込）</span><span>' + yen(negative ? 0 : numbers.subtotal) + '</span></div>';
     box.appendChild(cashBlock);
@@ -970,6 +1241,10 @@
   });
 
   // ---------- init ----------
+  shippingRates = loadShippingRates();
+  recomputeNextShippingId();
+  renderShippingTable();
+  renderShippingSelectors();
   renderProposals();
   renderFinalPlans();
   initProducts();

@@ -6,7 +6,7 @@
  */
 
 const SHEET_NAME = "products";
-const HEADERS = ["id", "name", "price", "quantity", "unit"];
+const HEADERS = ["id", "name", "price", "quantity", "unit", "size"];
 
 // ここを必ず自分だけが知っている文字列に変更してください（第三者による書き換え防止用）
 const API_TOKEN = "REPLACE_WITH_YOUR_OWN_SECRET";
@@ -20,7 +20,8 @@ function doGet(e) {
     name: r[1],
     price: r[2],
     quantity: r[3] || 0,
-    unit: r[4] || ""
+    unit: r[4] || "",
+    size: r[5] || 0
   }));
   return jsonOutput_({ products });
 }
@@ -47,7 +48,7 @@ function doPost(e) {
   try {
     const sheet = getSheet_();
     const rows = [HEADERS].concat(
-      body.products.map(p => [p.id, p.name, p.price, p.quantity || 0, p.unit || ""])
+      body.products.map(p => [p.id, p.name, p.price, p.quantity || 0, p.unit || "", p.size || 0])
     );
     const prevLastRow = sheet.getLastRow();
     // 先に新データを書き込んでから余った古い行を消すことで、読み取り側が
