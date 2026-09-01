@@ -50,13 +50,13 @@
 <div class="app">
   <header>
     <h1>B払い計算ツール - 管理者ページ</h1>
-    <p>全担当者が保存した見積書を一覧・編集できます。</p>
+    <p>全担当者が保存した計算書を一覧・編集できます。</p>
   </header>
 
   <div id="denied-holder"></div>
 
   <section id="section-list" style="display:none;">
-    <h2>保存された見積書一覧</h2>
+    <h2>保存された計算書一覧</h2>
     <div class="field">
       <label>担当者・名前で絞り込み</label>
       <input type="text" id="input-filter" placeholder="例：田中、〇〇商店">
@@ -135,7 +135,7 @@
     );
     tbody.innerHTML = "";
     if(filtered.length === 0){
-      tbody.innerHTML = '<tr><td colspan="5" class="empty-hint">保存された見積書がありません。</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="5" class="empty-hint">保存された計算書がありません。</td></tr>';
       return;
     }
     const sorted = [...filtered].sort((a, b) => b.savedAt - a.savedAt);
@@ -187,7 +187,7 @@
     const result = await fetchQuotes();
     if(result === null){
       document.getElementById("quotes-tbody").innerHTML =
-        '<tr><td colspan="5" class="empty-hint">見積書一覧を取得できませんでした（通信状況をご確認ください）。</td></tr>';
+        '<tr><td colspan="5" class="empty-hint">計算書一覧を取得できませんでした（通信状況をご確認ください）。</td></tr>';
       return;
     }
     quotes = result;

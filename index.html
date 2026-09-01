@@ -167,16 +167,16 @@
 <div class="app">
   <header>
     <h1>B払い 計算ツール</h1>
-    <p>事粒交換用の見積り計算ツール。現金とB払い(粒)を組み合わせた支払いプランを作成します。</p>
+    <p>事粒交換用の計算ツール。現金とB払い(粒)を組み合わせた支払いプランを作成します。</p>
   </header>
 
   <section id="section-saved-quotes">
-    <h2>見積書の保存・読み込み</h2>
+    <h2>計算書の保存・読み込み</h2>
     <p class="note" id="current-user-display"></p>
-    <p class="note">現在の入力内容・計算結果を、得意先名などを付けて保存できます。ここに表示されるのは自分が保存した見積書のみです。</p>
+    <p class="note">現在の入力内容・計算結果を、得意先名などを付けて保存できます。ここに表示されるのは自分が保存した計算書のみです。</p>
     <div class="toolbar" style="margin-top:0;margin-bottom:14px;">
       <button class="btn primary" id="btn-save-quote">現在の内容を名前を付けて保存</button>
-      <button class="btn" id="btn-new-quote">新しい見積書を作成</button>
+      <button class="btn" id="btn-new-quote">新しい計算書を作成</button>
     </div>
     <div class="table-scroll">
       <table>
@@ -325,7 +325,7 @@
   </section>
 
   <section id="section-estimate">
-    <h2>見積書</h2>
+    <h2>計算書</h2>
     <div id="estimate-holder"></div>
   </section>
 </div>
@@ -1480,7 +1480,7 @@
     holder.innerHTML = "";
     const idx = finalPlans.findIndex(fp => fp.chosen);
     if(idx === -1){
-      holder.innerHTML = '<div class="empty-hint">「最終計算表示」で案を選択すると、ここに見積書が表示されます。</div>';
+      holder.innerHTML = '<div class="empty-hint">「最終計算表示」で案を選択すると、ここに計算書が表示されます。</div>';
       return;
     }
     const fp = finalPlans[idx];
@@ -1578,7 +1578,7 @@
     }catch(e){}
     let name = "";
     while(!name){
-      name = (prompt("お名前を入力してください（見積書の保存・管理に使用します）") || "").trim();
+      name = (prompt("お名前を入力してください（計算書の保存・管理に使用します）") || "").trim();
     }
     try{ localStorage.setItem(CURRENT_USER_KEY, name); }catch(e){}
     return name;
@@ -1588,8 +1588,8 @@
   const isAdmin = currentUser === ADMIN_TOKEN;
   const loadQuoteIdFromUrl = new URLSearchParams(window.location.search).get("loadQuote");
 
-  // ---------- 見積書の保存・読み込み（共有スプレッドシートに保存。担当者ごとに絞り込み） ----------
-  let allQuotesRaw = []; // サーバーから取得した自分の見積書（更新のたびに再取得）
+  // ---------- 計算書の保存・読み込み（共有スプレッドシートに保存。担当者ごとに絞り込み） ----------
+  let allQuotesRaw = []; // サーバーから取得した自分の計算書（更新のたびに再取得）
   let editingQuoteId = null;
   let editingQuoteOwner = null;
   let editingQuoteName = "";
@@ -1621,7 +1621,7 @@
     const quotes = await fetchQuotesFromServer();
     if(quotes === null){
       document.getElementById("saved-quotes-tbody").innerHTML =
-        '<tr><td colspan="4" class="empty-hint">見積書一覧を取得できませんでした（通信状況をご確認ください）。</td></tr>';
+        '<tr><td colspan="4" class="empty-hint">計算書一覧を取得できませんでした（通信状況をご確認ください）。</td></tr>';
       return;
     }
     allQuotesRaw = quotes;
@@ -1668,7 +1668,7 @@
     tbody.innerHTML = "";
     const own = allQuotesRaw.filter(q => q.owner === currentUser);
     if(own.length === 0){
-      tbody.innerHTML = '<tr><td colspan="4" class="empty-hint">まだ保存された見積書がありません。</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="4" class="empty-hint">まだ保存された計算書がありません。</td></tr>';
       return;
     }
     const sorted = [...own].sort((a, b) => b.savedAt - a.savedAt);
@@ -1721,7 +1721,7 @@
   }
 
   document.getElementById("btn-new-quote").addEventListener("click", () => {
-    if(!confirm("現在の作業内容をクリアして、新しい見積書を作成します。よろしいですか？")) return;
+    if(!confirm("現在の作業内容をクリアして、新しい計算書を作成します。よろしいですか？")) return;
     editingQuoteId = null;
     editingQuoteOwner = null;
     editingQuoteName = "";
@@ -1798,7 +1798,7 @@
           editingQuoteName = target.name;
           restoreState(target.state);
         }else{
-          alert("指定された見積書が見つかりませんでした。");
+          alert("指定された計算書が見つかりませんでした。");
         }
       }
     }
