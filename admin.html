@@ -41,9 +41,13 @@
   .btn.small{padding:4px 10px;font-size:12px;}
   .btn.danger{color:var(--danger);}
   .btn.danger:hover{background:var(--danger-soft);}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;}
+  .btn.primary:hover{background:var(--accent-dark);}
   .row-actions{white-space:nowrap;}
   .empty-hint{color:var(--sub);font-size:13px;padding:8px 2px;}
-  .denied{padding:40px 20px;text-align:center;color:var(--danger);}
+  .field input[type=password]{
+    border:1px solid var(--border);border-radius:8px;padding:9px 10px;font-size:15px;width:260px;max-width:100%;
+  }
 </style>
 </head>
 <body>
@@ -53,7 +57,15 @@
     <p>全担当者が保存した計算書を一覧・編集できます。</p>
   </header>
 
-  <div id="denied-holder"></div>
+  <section id="section-login">
+    <h2>管理者ログイン</h2>
+    <div class="field">
+      <label>合言葉を入力してください</label>
+      <input type="password" id="input-passphrase" placeholder="合言葉" autocomplete="off">
+    </div>
+    <button class="btn primary" id="btn-login">開く</button>
+    <p class="note" id="login-error" style="display:none;color:var(--danger);">合言葉が違います。もう一度お試しください。</p>
+  </section>
 
   <section id="section-list" style="display:none;">
     <h2>保存された計算書一覧</h2>
@@ -83,16 +95,39 @@
   const REMOTE_API_URL = "https://script.google.com/macros/s/AKfycbw8OLWBJiXvXJ-c8SpDMtmTx440lQSB4ZrNIT_Z9CHMYpOOkERr8AXbBVjkmCpmPcwJdw/exec";
   const REMOTE_API_TOKEN = "YGfcWJDnrN8fXEs2m4ru0AOGFR-z63KW";
   const ADMIN_TOKEN = "admin-Io6f7ov7CT4";
+  const ADMIN_PASSPHRASE = "Udon";
+  const ADMIN_AUTH_KEY = "ltob_admin_authed_v1";
 
-  const params = new URLSearchParams(window.location.search);
-  const u = params.get("u");
-
-  if(u !== ADMIN_TOKEN){
-    document.getElementById("denied-holder").innerHTML =
-      '<section><div class="denied">このページを開く権限がありません。<br>正しい管理者用リンクからアクセスしてください。</div></section>';
-    return;
+  function showList(){
+    document.getElementById("section-login").style.display = "none";
+    document.getElementById("section-list").style.display = "";
+    refresh();
   }
-  document.getElementById("section-list").style.display = "";
+
+  function tryLogin(){
+    const input = document.getElementById("input-passphrase");
+    if(input.value === ADMIN_PASSPHRASE){
+      try{ localStorage.setItem(ADMIN_AUTH_KEY, "1"); }catch(e){}
+      document.getElementById("login-error").style.display = "none";
+      showList();
+    }else{
+      document.getElementById("login-error").style.display = "";
+      input.value = "";
+      input.focus();
+    }
+  }
+
+  let authed = false;
+  try{ authed = localStorage.getItem(ADMIN_AUTH_KEY) === "1"; }catch(e){}
+
+  if(authed){
+    showList();
+  }else{
+    document.getElementById("btn-login").addEventListener("click", tryLogin);
+    document.getElementById("input-passphrase").addEventListener("keydown", (e) => {
+      if(e.key === "Enter") tryLogin();
+    });
+  }
 
   let quotes = [];
 
@@ -195,8 +230,6 @@
   }
 
   document.getElementById("input-filter").addEventListener("input", render);
-
-  refresh();
 })();
 </script>
 </body>
