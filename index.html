@@ -172,15 +172,18 @@
 
   <section id="section-products">
     <h2>B商品価格リスト</h2>
-    <p class="note">商品名・価格は自由に編集・追加・削除できます。「数量」「単位」を入力すると、同じ単位の商品同士で割高な組み合わせ（例：1000粒×2 は 2000粒×1 より高い）を提案から自動的に除外します。いずれも空欄のままで構いません。</p>
+    <p class="note">商品名・価格は自由に編集・追加・削除できます。「数量」「単位」を入力すると、同じ単位の商品同士で割高な組み合わせ（例：1000粒×2 は 2000粒×1 より高い）を提案から自動的に除外します。「縦・横・高さ」(cm)を入力すると、商品1個あたりの体積として送料サイズの自動算出に使われます。いずれも空欄のままで構いません。</p>
     <p class="note" id="sync-status"></p>
     <div class="table-scroll">
       <table>
         <thead><tr>
-          <th style="width:180px;">商品名</th>
-          <th style="width:120px;">価格（円）</th>
-          <th style="width:90px;">数量</th>
-          <th style="width:80px;">単位</th>
+          <th style="width:160px;">商品名</th>
+          <th style="width:100px;">価格（円）</th>
+          <th style="width:70px;">数量</th>
+          <th style="width:60px;">単位</th>
+          <th style="width:60px;">縦(cm)</th>
+          <th style="width:60px;">横(cm)</th>
+          <th style="width:60px;">高さ(cm)</th>
           <th style="width:60px;"></th>
         </tr></thead>
         <tbody id="product-tbody"></tbody>
@@ -194,7 +197,14 @@
 
   <section id="section-size-registry">
     <h2>サイズ登録一覧</h2>
-    <p class="note">B払いの商品組み合わせごとに、実際の配送サイズを登録します。宅配便の「サイズ」は実際に梱包した箱を測って決まるため、組み合わせを自動計算する共通の公式はありません。「最終計算表示」で採用した案のサイズを選ぶと、ここに登録されます。</p>
+    <p class="note">B払いの商品組み合わせごとに、配送サイズを登録します。商品リストに「縦・横・高さ」を入力した商品は、組み合わせの体積から3辺合計の目安を自動計算し、直近上位のサイズ区分を自動登録します（宅配便のサイズは最終的に実際の梱包を測って決まるため、あくまで目安です）。「最終計算表示」でいつでも手動修正できます。</p>
+    <div class="field" style="margin-bottom:14px;">
+      <label>梱包効率</label>
+      <div class="input-row">
+        <input type="number" id="input-packing-efficiency" step="1" min="1" max="100" style="width:100px;">
+        <span class="suffix">％　※箱の隙間を考慮した余裕率。低いほど大きめのサイズになります（目安70%）。</span>
+      </div>
+    </div>
     <div class="table-scroll">
       <table>
         <thead><tr>
@@ -317,13 +327,13 @@
   const REMOTE_API_TOKEN = "YGfcWJDnrN8fXEs2m4ru0AOGFR-z63KW";
 
   const DEFAULT_PRODUCTS = [
-    {id:1, name:"500粒", price:5157, quantity:500, unit:"粒"},
-    {id:2, name:"1000粒", price:9880, quantity:1000, unit:"粒"},
-    {id:3, name:"2000粒", price:17700, quantity:2000, unit:"粒"},
-    {id:4, name:"BCEx 原液 50ml", price:4278, quantity:50, unit:"ml"},
-    {id:5, name:"BCEx 原液 400ml", price:26700, quantity:400, unit:"ml"},
-    {id:6, name:"BCEx ドリンク", price:1100, quantity:0, unit:""},
-    {id:7, name:"BCEx 503", price:3200, quantity:0, unit:""},
+    {id:1, name:"500粒", price:5157, quantity:500, unit:"粒", d:0, w:0, h:0},
+    {id:2, name:"1000粒", price:9880, quantity:1000, unit:"粒", d:0, w:0, h:0},
+    {id:3, name:"2000粒", price:17700, quantity:2000, unit:"粒", d:0, w:0, h:0},
+    {id:4, name:"BCEx 原液 50ml", price:4278, quantity:50, unit:"ml", d:0, w:0, h:0},
+    {id:5, name:"BCEx 原液 400ml", price:26700, quantity:400, unit:"ml", d:0, w:0, h:0},
+    {id:6, name:"BCEx ドリンク", price:1100, quantity:0, unit:"", d:0, w:0, h:0},
+    {id:7, name:"BCEx 503", price:3200, quantity:0, unit:"", d:0, w:0, h:0},
   ];
 
   let nextProductId = 100;
@@ -375,7 +385,10 @@
       name: String(p.name || ""),
       price: Number(p.price) || 0,
       quantity: Number(p.quantity) || 0,
-      unit: String(p.unit || "")
+      unit: String(p.unit || ""),
+      d: Number(p.d) || 0,
+      w: Number(p.w) || 0,
+      h: Number(p.h) || 0
     }));
   }
 
@@ -544,6 +557,25 @@
       });
       tdUnit.appendChild(unitInput);
 
+      function makeDimInput(field){
+        const td = document.createElement("td");
+        const input = document.createElement("input");
+        input.type = "number";
+        input.step = "1";
+        input.min = "0";
+        input.placeholder = "任意";
+        input.value = p[field] || "";
+        input.addEventListener("input", ()=>{
+          p[field] = parseFloat(input.value) || 0;
+          saveProducts();
+        });
+        td.appendChild(input);
+        return td;
+      }
+      const tdD = makeDimInput("d");
+      const tdW = makeDimInput("w");
+      const tdH = makeDimInput("h");
+
       const tdActions = document.createElement("td");
       tdActions.className = "row-actions";
       const delBtn = document.createElement("button");
@@ -562,13 +594,16 @@
       tr.appendChild(tdPrice);
       tr.appendChild(tdQty);
       tr.appendChild(tdUnit);
+      tr.appendChild(tdD);
+      tr.appendChild(tdW);
+      tr.appendChild(tdH);
       tr.appendChild(tdActions);
       tbody.appendChild(tr);
     });
   }
 
   document.getElementById("btn-add-product").addEventListener("click", ()=>{
-    const newProduct = {id: nextProductId++, name:"新規商品", price:0, quantity:0, unit:""};
+    const newProduct = {id: nextProductId++, name:"新規商品", price:0, quantity:0, unit:"", d:0, w:0, h:0};
     products.push(newProduct);
     saveProducts();
     renderProductTable();
@@ -771,6 +806,44 @@
   function unregisterSize(sig){
     delete sizeRegistry[sig];
     saveSizeRegistry();
+  }
+
+  // ---------- 体積からのサイズ自動見積もり ----------
+  const PACKING_EFFICIENCY_KEY = "ltob_bpay_packing_efficiency_v1";
+  function loadPackingEfficiency(){
+    try{
+      const raw = localStorage.getItem(PACKING_EFFICIENCY_KEY);
+      const v = Number(raw);
+      if(v > 0 && v <= 100) return v;
+    }catch(e){}
+    return 70;
+  }
+  function savePackingEfficiency(v){
+    try{ localStorage.setItem(PACKING_EFFICIENCY_KEY, String(v)); }catch(e){}
+  }
+  function roundToSizeBracket(threeSidesSum){
+    for(const sz of SIZE_BRACKETS){
+      if(threeSidesSum <= sz) return sz;
+    }
+    return SIZE_BRACKETS[SIZE_BRACKETS.length - 1];
+  }
+  // 組み合わせの合計体積 → 梱包効率で割った実効体積 → 立方体と仮定した1辺 → ×3 で3辺合計の目安
+  function estimateSizeForCombo(combo){
+    let totalVolume = 0;
+    for(const pid in combo){
+      const p = products.find(x => x.id === Number(pid));
+      if(p) totalVolume += (p.d || 0) * (p.w || 0) * (p.h || 0) * combo[pid];
+    }
+    if(totalVolume <= 0) return null;
+    const efficiency = loadPackingEfficiency() / 100;
+    const effectiveVolume = totalVolume / efficiency;
+    const side = Math.cbrt(effectiveVolume);
+    const threeSidesSum = Math.ceil(side * 3);
+    return {
+      totalVolume,
+      threeSidesSum,
+      bracket: roundToSizeBracket(threeSidesSum)
+    };
   }
 
   function renderSizeRegistryTable(){
@@ -1082,6 +1155,7 @@
         }
         renderProposals();
         renderFinalPlans();
+        renderSizeRegistryTable();
       });
 
       const body = document.createElement("div");
@@ -1128,6 +1202,12 @@
       shippingRegion: document.getElementById("input-shipping-region").value,
       chosen: false
     });
+
+    // 縦・横・高さが入力済みの商品だけで組み合わせの体積が計算できれば、サイズを自動登録する
+    if(getRegisteredSize(prop.sig) === null){
+      const estimate = estimateSizeForCombo(prop.combo);
+      if(estimate) registerSize(prop.sig, estimate.bracket);
+    }
   }
   function removePlanBySig(sig){
     finalPlans = finalPlans.filter(fp => fp.sig !== sig);
@@ -1237,6 +1317,16 @@
       sizeRow.appendChild(sizeLabel);
       sizeRow.appendChild(sizeSelect);
 
+      let estimateNote = null;
+      const sizeEstimate = estimateSizeForCombo(fp.combo);
+      if(sizeEstimate){
+        estimateNote = document.createElement("p");
+        estimateNote.className = "note";
+        estimateNote.style.margin = "-6px 0 10px 2px";
+        estimateNote.textContent = "自動計算の目安：合計体積 " + Math.round(sizeEstimate.totalVolume).toLocaleString("ja-JP") +
+          "cm³ ÷ 梱包効率" + loadPackingEfficiency() + "% → 3辺合計 約" + sizeEstimate.threeSidesSum + "cm → " + sizeEstimate.bracket + "サイズ";
+      }
+
       const grid = document.createElement("div");
       grid.className = "plan-grid";
       grid.innerHTML =
@@ -1276,6 +1366,7 @@
       }
       card.appendChild(breakdown);
       card.appendChild(sizeRow);
+      if(estimateNote) card.appendChild(estimateNote);
       card.appendChild(grid);
       holder.appendChild(card);
     });
@@ -1390,7 +1481,14 @@
     });
   });
 
+  document.getElementById("input-packing-efficiency").addEventListener("input", ()=>{
+    const v = parseFloat(document.getElementById("input-packing-efficiency").value);
+    if(v > 0 && v <= 100) savePackingEfficiency(v);
+    renderFinalPlans();
+  });
+
   // ---------- init ----------
+  document.getElementById("input-packing-efficiency").value = loadPackingEfficiency();
   areaNames = loadAreaNames();
   shippingRates = loadShippingRates();
   sizeRegistry = loadSizeRegistry();
