@@ -172,9 +172,11 @@
 
   <section id="section-saved-quotes">
     <h2>見積書の保存・読み込み</h2>
-    <p class="note">現在の入力内容・計算結果を、得意先名などを付けて保存できます（この端末のみに保存されます）。</p>
+    <p class="note" id="current-user-display"></p>
+    <p class="note">現在の入力内容・計算結果を、得意先名などを付けて保存できます。ここに表示されるのは自分が保存した見積書のみです。</p>
     <div class="toolbar" style="margin-top:0;margin-bottom:14px;">
       <button class="btn primary" id="btn-save-quote">現在の内容を名前を付けて保存</button>
+      <button class="btn" id="btn-new-quote">新しい見積書を作成</button>
     </div>
     <div class="table-scroll">
       <table>
@@ -1558,23 +1560,74 @@
     });
   });
 
-  // ---------- 見積書の保存・読み込み ----------
-  const SAVED_QUOTES_KEY = "ltob_bpay_saved_quotes_v1";
-  let savedQuotes = [];
+  // ---------- ユーザー識別（URLの ?u= パラメータで本人確認・管理者判定） ----------
+  // 管理者用の秘匿トークン。admin.html の ?u= と一致させる（第三者に推測されない値にしてください）。
+  const ADMIN_TOKEN = "admin-Io6f7ov7CT4";
+  const CURRENT_USER_KEY = "ltob_bpay_current_user_v1";
 
-  function loadSavedQuotes(){
+  function resolveCurrentUser(){
+    const params = new URLSearchParams(window.location.search);
+    const fromUrl = params.get("u");
+    if(fromUrl){
+      try{ localStorage.setItem(CURRENT_USER_KEY, fromUrl); }catch(e){}
+      return fromUrl;
+    }
     try{
-      const raw = localStorage.getItem(SAVED_QUOTES_KEY);
-      if(raw){
-        const parsed = JSON.parse(raw);
-        if(Array.isArray(parsed)) return parsed;
-      }
+      const cached = localStorage.getItem(CURRENT_USER_KEY);
+      if(cached) return cached;
     }catch(e){}
-    return [];
+    let name = "";
+    while(!name){
+      name = (prompt("お名前を入力してください（見積書の保存・管理に使用します）") || "").trim();
+    }
+    try{ localStorage.setItem(CURRENT_USER_KEY, name); }catch(e){}
+    return name;
   }
-  function saveSavedQuotes(){
-    try{ localStorage.setItem(SAVED_QUOTES_KEY, JSON.stringify(savedQuotes)); }catch(e){}
+
+  const currentUser = resolveCurrentUser();
+  const isAdmin = currentUser === ADMIN_TOKEN;
+  const loadQuoteIdFromUrl = new URLSearchParams(window.location.search).get("loadQuote");
+
+  // ---------- 見積書の保存・読み込み（共有スプレッドシートに保存。担当者ごとに絞り込み） ----------
+  let allQuotesRaw = []; // サーバーから取得した自分の見積書（更新のたびに再取得）
+  let editingQuoteId = null;
+  let editingQuoteOwner = null;
+  let editingQuoteName = "";
+
+  async function fetchQuotesFromServer(){
+    if(!REMOTE_API_URL) return [];
+    try{
+      const res = await fetch(REMOTE_API_URL + "?type=quotes");
+      const data = await res.json();
+      return Array.isArray(data.quotes) ? data.quotes : [];
+    }catch(e){
+      return null;
+    }
   }
+  async function postQuoteAction(action, payload){
+    if(!REMOTE_API_URL) return false;
+    try{
+      const res = await fetch(REMOTE_API_URL, {
+        method: "POST",
+        body: JSON.stringify(Object.assign({ type: "quotes", token: REMOTE_API_TOKEN, action }, payload))
+      });
+      const data = await res.json();
+      return !!(data && data.ok);
+    }catch(e){
+      return false;
+    }
+  }
+  async function refreshQuotesList(){
+    const quotes = await fetchQuotesFromServer();
+    if(quotes === null){
+      document.getElementById("saved-quotes-tbody").innerHTML =
+        '<tr><td colspan="4" class="empty-hint">見積書一覧を取得できませんでした（通信状況をご確認ください）。</td></tr>';
+      return;
+    }
+    allQuotesRaw = quotes;
+    renderSavedQuotesTable();
+  }
+
   function captureCurrentState(){
     return {
       premium: document.getElementById("input-premium").value,
@@ -1613,16 +1666,17 @@
   function renderSavedQuotesTable(){
     const tbody = document.getElementById("saved-quotes-tbody");
     tbody.innerHTML = "";
-    if(savedQuotes.length === 0){
+    const own = allQuotesRaw.filter(q => q.owner === currentUser);
+    if(own.length === 0){
       tbody.innerHTML = '<tr><td colspan="4" class="empty-hint">まだ保存された見積書がありません。</td></tr>';
       return;
     }
-    const sorted = [...savedQuotes].sort((a, b) => b.savedAt - a.savedAt);
+    const sorted = [...own].sort((a, b) => b.savedAt - a.savedAt);
     sorted.forEach(q => {
       const tr = document.createElement("tr");
 
       const tdName = document.createElement("td");
-      tdName.textContent = q.name;
+      tdName.textContent = q.name + (q.id === editingQuoteId ? "（編集中）" : "");
 
       const tdDate = document.createElement("td");
       tdDate.textContent = new Date(q.savedAt).toLocaleString("ja-JP");
@@ -1633,7 +1687,11 @@
       loadBtn.textContent = "読み込む";
       loadBtn.addEventListener("click", () => {
         if(finalPlans.length > 0 && !confirm("現在の作業内容は上書きされます。読み込みますか？")) return;
+        editingQuoteId = q.id;
+        editingQuoteOwner = q.owner;
+        editingQuoteName = q.name;
         restoreState(q.state);
+        renderSavedQuotesTable();
       });
       tdLoad.appendChild(loadBtn);
 
@@ -1642,11 +1700,15 @@
       const delBtn = document.createElement("button");
       delBtn.className = "btn small danger";
       delBtn.textContent = "削除";
-      delBtn.addEventListener("click", () => {
+      delBtn.addEventListener("click", async () => {
         if(!confirm("「" + q.name + "」を削除します。よろしいですか？")) return;
-        savedQuotes = savedQuotes.filter(x => x.id !== q.id);
-        saveSavedQuotes();
-        renderSavedQuotesTable();
+        const ok = await postQuoteAction("delete", { id: q.id });
+        if(ok){
+          if(editingQuoteId === q.id){ editingQuoteId = null; editingQuoteOwner = null; editingQuoteName = ""; }
+          await refreshQuotesList();
+        }else{
+          alert("削除に失敗しました。通信状況をご確認ください。");
+        }
       });
       tdDel.appendChild(delBtn);
 
@@ -1658,31 +1720,100 @@
     });
   }
 
-  document.getElementById("btn-save-quote").addEventListener("click", () => {
-    const name = prompt("得意先名など、わかりやすい名前を付けてください");
+  document.getElementById("btn-new-quote").addEventListener("click", () => {
+    if(!confirm("現在の作業内容をクリアして、新しい見積書を作成します。よろしいですか？")) return;
+    editingQuoteId = null;
+    editingQuoteOwner = null;
+    editingQuoteName = "";
+    document.getElementById("input-premium").value = "";
+    document.getElementById("input-total-cash").value = "";
+    document.getElementById("input-desired-b").value = "";
+    document.getElementById("input-tax-rate").value = 10;
+    desiredProductIds.clear();
+    adoptedSigs.clear();
+    finalPlans = [];
+    proposals = [];
+    hasSearched = false;
+    renderDesiredChecklist();
+    renderProposals();
+    renderFinalPlans();
+    renderSavedQuotesTable();
+  });
+
+  document.getElementById("btn-save-quote").addEventListener("click", async () => {
+    const name = prompt("得意先名など、わかりやすい名前を付けてください", editingQuoteName || "");
     const trimmed = (name || "").trim();
     if(!trimmed) return;
-    savedQuotes.push({
-      id: Date.now(),
-      name: trimmed,
-      savedAt: Date.now(),
-      state: captureCurrentState()
-    });
-    saveSavedQuotes();
-    renderSavedQuotesTable();
-    alert("「" + trimmed + "」として保存しました。");
+    const state = captureCurrentState();
+    const savedAt = Date.now();
+
+    if(editingQuoteId){
+      const ok = await postQuoteAction("update", {
+        quote: { id: editingQuoteId, owner: editingQuoteOwner || currentUser, name: trimmed, savedAt, state }
+      });
+      if(ok){
+        editingQuoteName = trimmed;
+        alert("「" + trimmed + "」を更新しました。");
+        await refreshQuotesList();
+      }else{
+        alert("保存に失敗しました。通信状況をご確認ください。");
+      }
+    }else{
+      const newId = "q_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+      const ok = await postQuoteAction("add", {
+        quote: { id: newId, owner: currentUser, name: trimmed, savedAt, state }
+      });
+      if(ok){
+        editingQuoteId = newId;
+        editingQuoteOwner = currentUser;
+        editingQuoteName = trimmed;
+        alert("「" + trimmed + "」として保存しました。");
+        await refreshQuotesList();
+      }else{
+        alert("保存に失敗しました。通信状況をご確認ください。");
+      }
+    }
   });
+
+  async function initQuotes(){
+    const userDisplay = document.getElementById("current-user-display");
+    userDisplay.textContent = "ログイン中: " + currentUser + (isAdmin ? "（管理者）" : "");
+    if(isAdmin){
+      const adminUrl = new URL("admin.html", window.location.href);
+      adminUrl.searchParams.set("u", ADMIN_TOKEN);
+      const link = document.createElement("a");
+      link.href = adminUrl.toString();
+      link.textContent = "管理者ページを開く";
+      link.style.marginLeft = "8px";
+      userDisplay.appendChild(link);
+    }
+
+    if(loadQuoteIdFromUrl){
+      const quotes = await fetchQuotesFromServer();
+      if(quotes){
+        const target = quotes.find(q => q.id === loadQuoteIdFromUrl);
+        if(target){
+          editingQuoteId = target.id;
+          editingQuoteOwner = target.owner;
+          editingQuoteName = target.name;
+          restoreState(target.state);
+        }else{
+          alert("指定された見積書が見つかりませんでした。");
+        }
+      }
+    }
+    await refreshQuotesList();
+  }
 
   // ---------- init ----------
   areaNames = loadAreaNames();
   shippingRates = loadShippingRates();
   sizeRegistry = loadSizeRegistry();
-  savedQuotes = loadSavedQuotes();
   recomputeNextShippingId();
   renderShippingTable();
   renderShippingSelectors();
   renderSizeRegistryTable();
-  renderSavedQuotesTable();
+  initQuotes();
   renderProposals();
   renderFinalPlans();
   initProducts();

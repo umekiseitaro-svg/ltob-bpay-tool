@@ -1,31 +1,25 @@
 /**
- * B払い計算ツール - 商品リスト共有用バックエンド
+ * B払い計算ツール - 商品リスト・見積書共有用バックエンド
  * このファイルは Google スプレッドシートの「拡張機能 > Apps Script」に貼り付けて使います。
  *
  * セットアップ手順は README.md を参照してください。
  */
 
-const SHEET_NAME = "products";
-const HEADERS = ["id", "name", "price", "quantity", "unit", "d", "w", "h"];
+const PRODUCTS_SHEET_NAME = "products";
+const PRODUCTS_HEADERS = ["id", "name", "price", "quantity", "unit", "d", "w", "h"];
+
+const QUOTES_SHEET_NAME = "quotes";
+const QUOTES_HEADERS = ["id", "owner", "name", "savedAt", "stateJson"];
 
 // ここを必ず自分だけが知っている文字列に変更してください（第三者による書き換え防止用）
 const API_TOKEN = "REPLACE_WITH_YOUR_OWN_SECRET";
 
 function doGet(e) {
-  const sheet = getSheet_();
-  const data = sheet.getDataRange().getValues();
-  const rows = data.slice(1).filter(r => r[0] !== "" && r[0] !== null);
-  const products = rows.map(r => ({
-    id: r[0],
-    name: r[1],
-    price: r[2],
-    quantity: r[3] || 0,
-    unit: r[4] || "",
-    d: r[5] || 0,
-    w: r[6] || 0,
-    h: r[7] || 0
-  }));
-  return jsonOutput_({ products });
+  const type = (e.parameter && e.parameter.type) || "products";
+  if (type === "quotes") {
+    return jsonOutput_({ quotes: readQuotes_() });
+  }
+  return jsonOutput_({ products: readProducts_() });
 }
 
 function doPost(e) {
@@ -39,39 +33,121 @@ function doPost(e) {
   if (body.token !== API_TOKEN) {
     return jsonOutput_({ error: "unauthorized" });
   }
+
+  if (body.type === "quotes") {
+    return handleQuotesPost_(body);
+  }
+  return handleProductsPost_(body);
+}
+
+// ---------- products（既存の一括置き換え方式。変更なし） ----------
+function readProducts_() {
+  const sheet = getSheet_(PRODUCTS_SHEET_NAME, PRODUCTS_HEADERS);
+  const data = sheet.getDataRange().getValues();
+  const rows = data.slice(1).filter(r => r[0] !== "" && r[0] !== null);
+  return rows.map(r => ({
+    id: r[0],
+    name: r[1],
+    price: r[2],
+    quantity: r[3] || 0,
+    unit: r[4] || "",
+    d: r[5] || 0,
+    w: r[6] || 0,
+    h: r[7] || 0
+  }));
+}
+
+function handleProductsPost_(body) {
   if (!Array.isArray(body.products)) {
     return jsonOutput_({ error: "invalid_payload" });
   }
-
-  // 複数端末からほぼ同時に書き込まれても内容が混ざらないよう、書き込み中は他の
-  // 書き込みをロックで待たせる（これがないと行が重複・増殖することがある）。
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
-    const sheet = getSheet_();
-    const rows = [HEADERS].concat(
+    const sheet = getSheet_(PRODUCTS_SHEET_NAME, PRODUCTS_HEADERS);
+    const rows = [PRODUCTS_HEADERS].concat(
       body.products.map(p => [p.id, p.name, p.price, p.quantity || 0, p.unit || "", p.d || 0, p.w || 0, p.h || 0])
     );
     const prevLastRow = sheet.getLastRow();
     // 先に新データを書き込んでから余った古い行を消すことで、読み取り側が
     // 一瞬「空」の状態を見てしまう(＝誤って再シードしてしまう)のを防ぐ。
-    sheet.getRange(1, 1, rows.length, HEADERS.length).setValues(rows);
+    sheet.getRange(1, 1, rows.length, PRODUCTS_HEADERS.length).setValues(rows);
     if (prevLastRow > rows.length) {
-      sheet.getRange(rows.length + 1, 1, prevLastRow - rows.length, HEADERS.length).clearContent();
+      sheet.getRange(rows.length + 1, 1, prevLastRow - rows.length, PRODUCTS_HEADERS.length).clearContent();
     }
   } finally {
     lock.releaseLock();
   }
-
   return jsonOutput_({ ok: true });
 }
 
-function getSheet_() {
+// ---------- quotes（複数人が同時に保存しても壊れないよう、1件ずつ追加・更新・削除する） ----------
+function readQuotes_() {
+  const sheet = getSheet_(QUOTES_SHEET_NAME, QUOTES_HEADERS);
+  const data = sheet.getDataRange().getValues();
+  const rows = data.slice(1).filter(r => r[0] !== "" && r[0] !== null);
+  return rows.map(r => {
+    let state = {};
+    try { state = JSON.parse(r[4] || "{}"); } catch (err) {}
+    return { id: r[0], owner: r[1], name: r[2], savedAt: r[3], state: state };
+  });
+}
+
+function handleQuotesPost_(body) {
+  const action = body.action;
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sheet = getSheet_(QUOTES_SHEET_NAME, QUOTES_HEADERS);
+
+    if (action === "add") {
+      const q = body.quote;
+      if (!q || !q.id) return jsonOutput_({ error: "invalid_payload" });
+      sheet.appendRow([q.id, q.owner || "", q.name || "", q.savedAt || Date.now(), JSON.stringify(q.state || {})]);
+      return jsonOutput_({ ok: true });
+    }
+
+    if (action === "update") {
+      const q = body.quote;
+      if (!q || !q.id) return jsonOutput_({ error: "invalid_payload" });
+      const rowIndex = findQuoteRow_(sheet, q.id);
+      if (rowIndex === -1) return jsonOutput_({ error: "not_found" });
+      sheet.getRange(rowIndex, 1, 1, QUOTES_HEADERS.length).setValues(
+        [[q.id, q.owner || "", q.name || "", q.savedAt || Date.now(), JSON.stringify(q.state || {})]]
+      );
+      return jsonOutput_({ ok: true });
+    }
+
+    if (action === "delete") {
+      const id = body.id;
+      if (!id) return jsonOutput_({ error: "invalid_payload" });
+      const rowIndex = findQuoteRow_(sheet, id);
+      if (rowIndex === -1) return jsonOutput_({ error: "not_found" });
+      sheet.deleteRow(rowIndex);
+      return jsonOutput_({ ok: true });
+    }
+
+    return jsonOutput_({ error: "unknown_action" });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function findQuoteRow_(sheet, id) {
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(id)) return i + 1; // 1-indexed row number
+  }
+  return -1;
+}
+
+// ---------- common ----------
+function getSheet_(name, headers) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sheet = ss.getSheetByName(SHEET_NAME);
+  let sheet = ss.getSheetByName(name);
   if (!sheet) {
-    sheet = ss.insertSheet(SHEET_NAME);
-    sheet.appendRow(HEADERS);
+    sheet = ss.insertSheet(name);
+    sheet.appendRow(headers);
   }
   return sheet;
 }
