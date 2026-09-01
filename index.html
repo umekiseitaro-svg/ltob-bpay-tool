@@ -197,14 +197,7 @@
 
   <section id="section-size-registry">
     <h2>サイズ登録一覧</h2>
-    <p class="note">B払いの商品組み合わせごとに、配送サイズを登録します。商品リストに「縦・横・高さ」を入力した商品は、組み合わせの体積から3辺合計の目安を自動計算し、直近上位のサイズ区分を自動登録します（宅配便のサイズは最終的に実際の梱包を測って決まるため、あくまで目安です）。「最終計算表示」でいつでも手動修正できます。</p>
-    <div class="field" style="margin-bottom:14px;">
-      <label>梱包効率</label>
-      <div class="input-row">
-        <input type="number" id="input-packing-efficiency" step="1" min="1" max="100" style="width:100px;">
-        <span class="suffix">％　※箱の隙間を考慮した余裕率。低いほど大きめのサイズになります（目安70%）。</span>
-      </div>
-    </div>
+    <p class="note">B払いの商品組み合わせごとに、配送サイズを登録します。商品リストに「縦・横・高さ」を入力した商品は、組み合わせを実際に積み重ねたときに必要な外寸を計算し、ヤマト運輸のクロネコボックス（60〜140サイズ）および規格品（160〜200サイズ）の実寸に収まる最小のサイズを自動登録します（宅配便のサイズは最終的に実際の梱包を測って決まるため、あくまで目安です）。「最終計算表示」でいつでも手動修正できます。</p>
     <div class="table-scroll">
       <table>
         <thead><tr>
@@ -808,42 +801,76 @@
     saveSizeRegistry();
   }
 
-  // ---------- 体積からのサイズ自動見積もり ----------
-  const PACKING_EFFICIENCY_KEY = "ltob_bpay_packing_efficiency_v1";
-  function loadPackingEfficiency(){
-    try{
-      const raw = localStorage.getItem(PACKING_EFFICIENCY_KEY);
-      const v = Number(raw);
-      if(v > 0 && v <= 100) return v;
-    }catch(e){}
-    return 70;
-  }
-  function savePackingEfficiency(v){
-    try{ localStorage.setItem(PACKING_EFFICIENCY_KEY, String(v)); }catch(e){}
-  }
-  function roundToSizeBracket(threeSidesSum){
-    for(const sz of SIZE_BRACKETS){
-      if(threeSidesSum <= sz) return sz;
+  // ---------- 実在するヤマト運輸「クロネコボックス」＋規格品ダンボールの寸法を基準にサイズを自動判定 ----------
+  // 出典: クロネコボックス6/8/10/12/14（ヤマト運輸公式）、160/180/200は規格品（ダンボールワン等）の実寸
+  const STANDARD_BOXES = [
+    { bracket: 60,  dims: [20, 27, 13],   name: "クロネコボックス6" },
+    { bracket: 80,  dims: [27, 38, 15],   name: "クロネコボックス8" },
+    { bracket: 100, dims: [27, 38, 35],   name: "クロネコボックス10" },
+    { bracket: 120, dims: [38, 53, 29],   name: "クロネコボックス12" },
+    { bracket: 140, dims: [40, 60, 40],   name: "クロネコボックス14" },
+    { bracket: 160, dims: [61, 41, 51.4], name: "160サイズ規格品" },
+    { bracket: 180, dims: [67, 59, 51],   name: "180サイズ規格品" },
+    { bracket: 200, dims: [73, 49, 63],   name: "200サイズ規格品" },
+  ];
+
+  // 2つの直方体[dx,dy,dz]を、体積が最小になるように積み重ねたときの外寸を求める
+  function bestStackDims(a, b){
+    let best = null;
+    for(let hai = 0; hai < 3; hai++){
+      const ha = a[hai];
+      const remA = a.filter((_, i) => i !== hai);
+      for(let hbi = 0; hbi < 3; hbi++){
+        const hb = b[hbi];
+        const remB = b.filter((_, i) => i !== hbi);
+        const pairings = [[remB[0], remB[1]], [remB[1], remB[0]]];
+        for(const [pb0, pb1] of pairings){
+          const fx = Math.max(remA[0], pb0);
+          const fy = Math.max(remA[1], pb1);
+          const fz = ha + hb;
+          const vol = fx * fy * fz;
+          if(!best || vol < best.vol) best = { vol, dims: [fx, fy, fz] };
+        }
+      }
     }
-    return SIZE_BRACKETS[SIZE_BRACKETS.length - 1];
+    return best.dims;
   }
-  // 組み合わせの合計体積 → 梱包効率で割った実効体積 → 立方体と仮定した1辺 → ×3 で3辺合計の目安
-  function estimateSizeForCombo(combo){
-    let totalVolume = 0;
+
+  // 組み合わせの商品を1つずつ、体積が最小になるよう順番に積み重ねて必要な外寸を求める
+  function comboBoxDims(combo){
+    const items = [];
+    let itemCount = 0;
     for(const pid in combo){
       const p = products.find(x => x.id === Number(pid));
-      if(p) totalVolume += (p.d || 0) * (p.w || 0) * (p.h || 0) * combo[pid];
+      itemCount += combo[pid];
+      if(p && p.d && p.w && p.h){
+        for(let i = 0; i < combo[pid]; i++) items.push([p.d, p.w, p.h]);
+      }
     }
-    if(totalVolume <= 0) return null;
-    const efficiency = loadPackingEfficiency() / 100;
-    const effectiveVolume = totalVolume / efficiency;
-    const side = Math.cbrt(effectiveVolume);
-    const threeSidesSum = Math.ceil(side * 3);
-    return {
-      totalVolume,
-      threeSidesSum,
-      bracket: roundToSizeBracket(threeSidesSum)
-    };
+    if(items.length === 0 || items.length < itemCount) return null; // 寸法未入力の商品を含む場合は算出しない
+    let cur = items[0];
+    for(let i = 1; i < items.length; i++){
+      cur = bestStackDims(cur, items[i]);
+    }
+    return cur;
+  }
+
+  function fitsInBox(needed, box){
+    const n = [...needed].sort((a, b) => a - b);
+    const b2 = [...box].sort((a, b) => a - b);
+    return n[0] <= b2[0] && n[1] <= b2[1] && n[2] <= b2[2];
+  }
+
+  // 商品の縦・横・高さから必要な外寸を求め、実在する規格箱に収まる最小サイズを判定する
+  function estimateSizeForCombo(combo){
+    const neededDims = comboBoxDims(combo);
+    if(!neededDims) return null;
+    for(const box of STANDARD_BOXES){
+      if(fitsInBox(neededDims, box.dims)){
+        return { neededDims, bracket: box.bracket, boxName: box.name, boxDims: box.dims, overSized: false };
+      }
+    }
+    return { neededDims, bracket: null, boxName: null, boxDims: null, overSized: true };
   }
 
   function renderSizeRegistryTable(){
@@ -1203,10 +1230,10 @@
       chosen: false
     });
 
-    // 縦・横・高さが入力済みの商品だけで組み合わせの体積が計算できれば、サイズを自動登録する
+    // 縦・横・高さが入力済みの商品だけで組み合わせの外寸が計算でき、かつ200サイズ以内に収まれば自動登録する
     if(getRegisteredSize(prop.sig) === null){
       const estimate = estimateSizeForCombo(prop.combo);
-      if(estimate) registerSize(prop.sig, estimate.bracket);
+      if(estimate && estimate.bracket !== null) registerSize(prop.sig, estimate.bracket);
     }
   }
   function removePlanBySig(sig){
@@ -1321,10 +1348,14 @@
       const sizeEstimate = estimateSizeForCombo(fp.combo);
       if(sizeEstimate){
         estimateNote = document.createElement("p");
-        estimateNote.className = "note";
+        estimateNote.className = "note" + (sizeEstimate.overSized ? " warn" : "");
         estimateNote.style.margin = "-6px 0 10px 2px";
-        estimateNote.textContent = "自動計算の目安：合計体積 " + Math.round(sizeEstimate.totalVolume).toLocaleString("ja-JP") +
-          "cm³ ÷ 梱包効率" + loadPackingEfficiency() + "% → 3辺合計 約" + sizeEstimate.threeSidesSum + "cm → " + sizeEstimate.bracket + "サイズ";
+        const dimsText = sizeEstimate.neededDims.map(d => Math.ceil(d)).join("×") + "cm";
+        if(sizeEstimate.overSized){
+          estimateNote.textContent = "⚠ 自動計算の目安：必要な外寸 約" + dimsText + " → 200サイズの箱にも収まりません。手動でサイズをご確認ください。";
+        }else{
+          estimateNote.textContent = "自動計算の目安：必要な外寸 約" + dimsText + " → " + sizeEstimate.boxName + "（" + sizeEstimate.boxDims.join("×") + "cm）に収まる " + sizeEstimate.bracket + "サイズ";
+        }
       }
 
       const grid = document.createElement("div");
@@ -1481,14 +1512,7 @@
     });
   });
 
-  document.getElementById("input-packing-efficiency").addEventListener("input", ()=>{
-    const v = parseFloat(document.getElementById("input-packing-efficiency").value);
-    if(v > 0 && v <= 100) savePackingEfficiency(v);
-    renderFinalPlans();
-  });
-
   // ---------- init ----------
-  document.getElementById("input-packing-efficiency").value = loadPackingEfficiency();
   areaNames = loadAreaNames();
   shippingRates = loadShippingRates();
   sizeRegistry = loadSizeRegistry();
