@@ -170,6 +170,25 @@
     <p>事粒交換用の見積り計算ツール。現金とB払い(粒)を組み合わせた支払いプランを作成します。</p>
   </header>
 
+  <section id="section-saved-quotes">
+    <h2>見積書の保存・読み込み</h2>
+    <p class="note">現在の入力内容・計算結果を、得意先名などを付けて保存できます（この端末のみに保存されます）。</p>
+    <div class="toolbar" style="margin-top:0;margin-bottom:14px;">
+      <button class="btn primary" id="btn-save-quote">現在の内容を名前を付けて保存</button>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr>
+          <th>名前</th>
+          <th style="width:170px;">保存日時</th>
+          <th style="width:90px;"></th>
+          <th style="width:60px;"></th>
+        </tr></thead>
+        <tbody id="saved-quotes-tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
   <section id="section-products">
     <h2>B商品価格リスト</h2>
     <p class="note">商品名・価格は自由に編集・追加・削除できます。「数量」「単位」を入力すると、同じ単位の商品同士で割高な組み合わせ（例：1000粒×2 は 2000粒×1 より高い）を提案から自動的に除外します。「縦・横・高さ」(cm)を入力すると、商品1個あたりの体積として送料サイズの自動算出に使われます。いずれも空欄のままで構いません。</p>
@@ -1539,14 +1558,131 @@
     });
   });
 
+  // ---------- 見積書の保存・読み込み ----------
+  const SAVED_QUOTES_KEY = "ltob_bpay_saved_quotes_v1";
+  let savedQuotes = [];
+
+  function loadSavedQuotes(){
+    try{
+      const raw = localStorage.getItem(SAVED_QUOTES_KEY);
+      if(raw){
+        const parsed = JSON.parse(raw);
+        if(Array.isArray(parsed)) return parsed;
+      }
+    }catch(e){}
+    return [];
+  }
+  function saveSavedQuotes(){
+    try{ localStorage.setItem(SAVED_QUOTES_KEY, JSON.stringify(savedQuotes)); }catch(e){}
+  }
+  function captureCurrentState(){
+    return {
+      premium: document.getElementById("input-premium").value,
+      totalCash: document.getElementById("input-total-cash").value,
+      desiredB: document.getElementById("input-desired-b").value,
+      taxRate: document.getElementById("input-tax-rate").value,
+      shippingOrigin: document.getElementById("input-shipping-origin").value,
+      shippingRegion: document.getElementById("input-shipping-region").value,
+      desiredProductIds: Array.from(desiredProductIds),
+      adoptedSigs: Array.from(adoptedSigs),
+      finalPlans: finalPlans.map(fp => ({ ...fp, combo: { ...fp.combo } })),
+      nextPlanId
+    };
+  }
+  function restoreState(state){
+    document.getElementById("input-premium").value = state.premium || "";
+    document.getElementById("input-total-cash").value = state.totalCash || "";
+    document.getElementById("input-desired-b").value = state.desiredB || "";
+    document.getElementById("input-tax-rate").value = state.taxRate || 10;
+    document.getElementById("input-shipping-origin").value = state.shippingOrigin || "";
+    document.getElementById("input-shipping-region").value = state.shippingRegion || "";
+
+    desiredProductIds = new Set(state.desiredProductIds || []);
+    adoptedSigs = new Set(state.adoptedSigs || []);
+    finalPlans = (state.finalPlans || []).map(fp => ({ ...fp, combo: { ...fp.combo } }));
+    nextPlanId = state.nextPlanId || (finalPlans.length ? Math.max(...finalPlans.map(f => f.id)) + 1 : 1);
+    proposals = [];
+    hasSearched = false;
+
+    renderDesiredChecklist();
+    renderProposals();
+    renderFinalPlans();
+    updateShippingFeeDisplay();
+  }
+
+  function renderSavedQuotesTable(){
+    const tbody = document.getElementById("saved-quotes-tbody");
+    tbody.innerHTML = "";
+    if(savedQuotes.length === 0){
+      tbody.innerHTML = '<tr><td colspan="4" class="empty-hint">まだ保存された見積書がありません。</td></tr>';
+      return;
+    }
+    const sorted = [...savedQuotes].sort((a, b) => b.savedAt - a.savedAt);
+    sorted.forEach(q => {
+      const tr = document.createElement("tr");
+
+      const tdName = document.createElement("td");
+      tdName.textContent = q.name;
+
+      const tdDate = document.createElement("td");
+      tdDate.textContent = new Date(q.savedAt).toLocaleString("ja-JP");
+
+      const tdLoad = document.createElement("td");
+      const loadBtn = document.createElement("button");
+      loadBtn.className = "btn small";
+      loadBtn.textContent = "読み込む";
+      loadBtn.addEventListener("click", () => {
+        if(finalPlans.length > 0 && !confirm("現在の作業内容は上書きされます。読み込みますか？")) return;
+        restoreState(q.state);
+      });
+      tdLoad.appendChild(loadBtn);
+
+      const tdDel = document.createElement("td");
+      tdDel.className = "row-actions";
+      const delBtn = document.createElement("button");
+      delBtn.className = "btn small danger";
+      delBtn.textContent = "削除";
+      delBtn.addEventListener("click", () => {
+        if(!confirm("「" + q.name + "」を削除します。よろしいですか？")) return;
+        savedQuotes = savedQuotes.filter(x => x.id !== q.id);
+        saveSavedQuotes();
+        renderSavedQuotesTable();
+      });
+      tdDel.appendChild(delBtn);
+
+      tr.appendChild(tdName);
+      tr.appendChild(tdDate);
+      tr.appendChild(tdLoad);
+      tr.appendChild(tdDel);
+      tbody.appendChild(tr);
+    });
+  }
+
+  document.getElementById("btn-save-quote").addEventListener("click", () => {
+    const name = prompt("得意先名など、わかりやすい名前を付けてください");
+    const trimmed = (name || "").trim();
+    if(!trimmed) return;
+    savedQuotes.push({
+      id: Date.now(),
+      name: trimmed,
+      savedAt: Date.now(),
+      state: captureCurrentState()
+    });
+    saveSavedQuotes();
+    renderSavedQuotesTable();
+    alert("「" + trimmed + "」として保存しました。");
+  });
+
   // ---------- init ----------
   areaNames = loadAreaNames();
   shippingRates = loadShippingRates();
   sizeRegistry = loadSizeRegistry();
+  savedQuotes = loadSavedQuotes();
   recomputeNextShippingId();
   renderShippingTable();
   renderShippingSelectors();
   renderSizeRegistryTable();
+  renderSavedQuotesTable();
   renderProposals();
   renderFinalPlans();
   initProducts();
