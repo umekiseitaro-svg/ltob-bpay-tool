@@ -202,7 +202,7 @@
       <table>
         <thead><tr>
           <th>組み合わせ</th>
-          <th style="width:110px;">サイズ</th>
+          <th style="width:110px;">サイズ（目安）</th>
           <th style="width:60px;"></th>
         </tr></thead>
         <tbody id="size-registry-tbody"></tbody>
@@ -814,29 +814,38 @@
     { bracket: 200, dims: [73, 49, 63],   name: "200サイズ規格品" },
   ];
 
-  // 2つの直方体[dx,dy,dz]を、体積が最小になるように積み重ねたときの外寸を求める
-  function bestStackDims(a, b){
+  // 商品1個について、どの辺を「層の高さ」に割り当てると残り2辺が一番正方形に近くなるかを選ぶ
+  function orientForSquareness(dims){
     let best = null;
-    for(let hai = 0; hai < 3; hai++){
-      const ha = a[hai];
-      const remA = a.filter((_, i) => i !== hai);
-      for(let hbi = 0; hbi < 3; hbi++){
-        const hb = b[hbi];
-        const remB = b.filter((_, i) => i !== hbi);
-        const pairings = [[remB[0], remB[1]], [remB[1], remB[0]]];
-        for(const [pb0, pb1] of pairings){
-          const fx = Math.max(remA[0], pb0);
-          const fy = Math.max(remA[1], pb1);
-          const fz = ha + hb;
-          const vol = fx * fy * fz;
-          if(!best || vol < best.vol) best = { vol, dims: [fx, fy, fz] };
-        }
-      }
+    for(let i = 0; i < 3; i++){
+      const z = dims[i];
+      const rest = dims.filter((_, j) => j !== i);
+      const balance = Math.abs(rest[0] - rest[1]);
+      if(!best || balance < best.balance) best = { balance, z, fx: rest[0], fy: rest[1] };
     }
-    return best.dims;
+    return { z: best.z, fx: best.fx, fy: best.fy };
   }
 
-  // 組み合わせの商品を1つずつ、体積が最小になるよう順番に積み重ねて必要な外寸を求める
+  // 1つの層の中で、2D矩形（fx,fy）を面積から目標幅を決めてシェルフ詰めする（目安計算）
+  function packLayer2D(items2d){
+    const totalArea = items2d.reduce((s, r) => s + r.fx * r.fy, 0);
+    const targetW = totalArea > 0 ? Math.sqrt(totalArea) : 1;
+    const sorted = [...items2d].sort((a, b) => b.fy - a.fy);
+    let xCursor = 0, yCursor = 0, rowH = 0, maxX = 0;
+    for(const { fx, fy } of sorted){
+      if(xCursor + fx > targetW && xCursor > 0){
+        yCursor += rowH;
+        xCursor = 0; rowH = 0;
+      }
+      xCursor += fx;
+      rowH = Math.max(rowH, fy);
+      maxX = Math.max(maxX, xCursor);
+    }
+    return [maxX, yCursor + rowH];
+  }
+
+  // 全商品中で最も長い辺を軸に、高さが近い商品同士を同じ層にまとめ、層ごとに2D詰めして
+  // 必要な外寸の目安を求める（実際の梱包を保証するものではなく、あくまで目安）
   function comboBoxDims(combo){
     const items = [];
     let itemCount = 0;
@@ -848,11 +857,29 @@
       }
     }
     if(items.length === 0 || items.length < itemCount) return null; // 寸法未入力の商品を含む場合は算出しない
-    let cur = items[0];
-    for(let i = 1; i < items.length; i++){
-      cur = bestStackDims(cur, items[i]);
+
+    const oriented = items.map(orientForSquareness).sort((a, b) => b.z - a.z);
+    const layers = [];
+    for(const o of oriented){
+      let placed = false;
+      for(const layer of layers){
+        if(o.z <= layer.z * 1.15){ // 高さが近い（15%以内）商品は同じ層にまとめる
+          layer.items.push({ fx: o.fx, fy: o.fy });
+          placed = true;
+          break;
+        }
+      }
+      if(!placed) layers.push({ z: o.z, items: [{ fx: o.fx, fy: o.fy }] });
     }
-    return cur;
+
+    let totalZ = 0, maxX = 0, maxY = 0;
+    for(const layer of layers){
+      const [lx, ly] = packLayer2D(layer.items);
+      maxX = Math.max(maxX, lx);
+      maxY = Math.max(maxY, ly);
+      totalZ += layer.z;
+    }
+    return [maxX, maxY, totalZ];
   }
 
   function fitsInBox(needed, box){
@@ -1327,7 +1354,7 @@
       const sizeRow = document.createElement("div");
       sizeRow.className = "size-register-row";
       const sizeLabel = document.createElement("span");
-      sizeLabel.textContent = "この組み合わせの配送サイズ：";
+      sizeLabel.textContent = "この組み合わせの配送サイズ（目安）：";
       const sizeSelect = document.createElement("select");
       sizeSelect.innerHTML = '<option value="">未登録</option>' +
         SIZE_BRACKETS.map(sz => '<option value="' + sz + '">' + sz + 'サイズ</option>').join("");
@@ -1452,7 +1479,7 @@
     cashBlock.innerHTML =
       '<h3>現金</h3>' +
       '<div class="estimate-row"><span>税抜（商品分）</span><span>' + yen(negative ? 0 : numbers.cashPortion) + '</span></div>' +
-      '<div class="estimate-row"><span>送料（税抜' + (numbers.sizeMissing ? "" : "・" + numbers.sizeBracket + "サイズ") + '）</span><span>' + (numbers.sizeMissing ? "サイズ未登録" : yen(numbers.shippingFee)) + '</span></div>' +
+      '<div class="estimate-row"><span>送料（税抜' + (numbers.sizeMissing ? "" : "・" + numbers.sizeBracket + "サイズ目安") + '）</span><span>' + (numbers.sizeMissing ? "サイズ未登録" : yen(numbers.shippingFee)) + '</span></div>' +
       '<div class="estimate-row"><span>消費税</span><span>' + yen(negative ? 0 : numbers.tax) + '</span></div>' +
       '<div class="estimate-row total"><span>総額（税込）</span><span>' + yen(negative ? 0 : numbers.subtotal) + '</span></div>';
     box.appendChild(cashBlock);
