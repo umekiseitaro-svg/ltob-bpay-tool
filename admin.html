@@ -561,12 +561,12 @@
   // ---------- 送料設定の編集 ----------
   const SIZE_BRACKETS = [60, 80, 100, 120, 140, 160, 180, 200];
   const DEFAULT_SHIPPING_RATES = [
-    {id:1, origin:"本社", size:60, region:"関東", fee:800},
-    {id:2, origin:"本社", size:60, region:"関西", fee:1000},
-    {id:3, origin:"本社", size:60, region:"北海道・沖縄", fee:1500},
-    {id:4, origin:"本社", size:60, region:"その他", fee:1000},
+    {id:1, origin:"関東", size:60, region:"関東", fee:855},
+    {id:2, origin:"関東", size:60, region:"関西", fee:964},
+    {id:3, origin:"関東", size:60, region:"九州", fee:1327},
+    {id:4, origin:"関東", size:60, region:"沖縄", fee:1327},
   ];
-  const DEFAULT_AREAS = ["本社", "北海道", "東北", "関東", "信越", "北陸", "中部", "関西", "中国", "四国", "九州", "沖縄", "その他"];
+  const DEFAULT_AREAS = ["北海道", "北東北", "南東北", "関東", "信越", "北陸", "中部", "関西", "中国", "四国", "九州", "沖縄"];
   let shippingRates = [];
   let areaNames = [];
   let nextShippingId = 100;
