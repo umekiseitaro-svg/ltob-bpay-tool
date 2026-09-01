@@ -331,6 +331,11 @@
   let shippingRates = [];
   let nextShippingId = 100;
 
+  // 発地・地域で共有する地域名マスタ（両方この一覧から選ぶ）
+  const AREA_STORAGE_KEY = "ltob_bpay_areas_v1";
+  const DEFAULT_AREAS = ["本社", "関東", "関西", "北海道・沖縄", "その他"];
+  let areaNames = [];
+
   // ---------- storage ----------
   function recomputeNextProductId(){
     nextProductId = products.length ? Math.max(...products.map(p=>p.id)) + 1 : 100;
@@ -581,6 +586,49 @@
   function recomputeNextShippingId(){
     nextShippingId = shippingRates.length ? Math.max(...shippingRates.map(r=>r.id)) + 1 : 100;
   }
+  function loadAreaNames(){
+    try{
+      const raw = localStorage.getItem(AREA_STORAGE_KEY);
+      if(raw){
+        const parsed = JSON.parse(raw);
+        if(Array.isArray(parsed) && parsed.length) return parsed;
+      }
+    }catch(e){}
+    return [...DEFAULT_AREAS];
+  }
+  function saveAreaNames(){
+    try{ localStorage.setItem(AREA_STORAGE_KEY, JSON.stringify(areaNames)); }catch(e){}
+  }
+  function addAreaName(name){
+    name = (name || "").trim();
+    if(!name || areaNames.includes(name)) return false;
+    areaNames.push(name);
+    saveAreaNames();
+    return true;
+  }
+  // 発地・地域用の <select> を作る共通ヘルパー。一覧の最後に「＋ 新しい地域を追加」を付ける。
+  function buildAreaSelect(currentValue, onChange){
+    const select = document.createElement("select");
+    select.innerHTML = areaNames.map(a => '<option value="' + escapeHtml(a) + '">' + escapeHtml(a) + '</option>').join("") +
+      '<option value="__add__">＋ 新しい地域を追加</option>';
+    if(areaNames.includes(currentValue)) select.value = currentValue;
+    select.addEventListener("change", ()=>{
+      if(select.value === "__add__"){
+        const name = prompt("新しい地域名を入力してください");
+        const trimmed = (name || "").trim();
+        if(trimmed && addAreaName(trimmed)){
+          onChange(trimmed);
+          renderShippingTable();
+          renderShippingSelectors();
+        }else{
+          select.value = areaNames.includes(currentValue) ? currentValue : (areaNames[0] || "");
+        }
+        return;
+      }
+      onChange(select.value);
+    });
+    return select;
+  }
   function loadShippingRates(){
     try{
       const raw = localStorage.getItem(SHIPPING_STORAGE_KEY);
@@ -602,15 +650,13 @@
       const tr = document.createElement("tr");
 
       const tdOrigin = document.createElement("td");
-      const originInput = document.createElement("input");
-      originInput.type = "text";
-      originInput.value = r.origin;
-      originInput.addEventListener("input", ()=>{
-        r.origin = originInput.value;
+      const originSelect = buildAreaSelect(r.origin, (value)=>{
+        r.origin = value;
         saveShippingRates();
         renderShippingSelectors();
+        renderFinalPlans();
       });
-      tdOrigin.appendChild(originInput);
+      tdOrigin.appendChild(originSelect);
 
       const tdSize = document.createElement("td");
       const sizeSelect = document.createElement("select");
@@ -625,19 +671,18 @@
         r.size = Number(sizeSelect.value);
         saveShippingRates();
         renderShippingSelectors();
+        renderFinalPlans();
       });
       tdSize.appendChild(sizeSelect);
 
       const tdRegion = document.createElement("td");
-      const regionInput = document.createElement("input");
-      regionInput.type = "text";
-      regionInput.value = r.region;
-      regionInput.addEventListener("input", ()=>{
-        r.region = regionInput.value;
+      const regionSelect = buildAreaSelect(r.region, (value)=>{
+        r.region = value;
         saveShippingRates();
         renderShippingSelectors();
+        renderFinalPlans();
       });
-      tdRegion.appendChild(regionInput);
+      tdRegion.appendChild(regionSelect);
 
       const tdFee = document.createElement("td");
       tdFee.className = "num";
@@ -650,6 +695,7 @@
         r.fee = parseFloat(feeInput.value) || 0;
         saveShippingRates();
         renderShippingSelectors();
+        renderFinalPlans();
       });
       tdFee.appendChild(feeInput);
 
@@ -663,6 +709,7 @@
         saveShippingRates();
         renderShippingTable();
         renderShippingSelectors();
+        renderFinalPlans();
       });
       tdActions.appendChild(delBtn);
 
@@ -676,22 +723,17 @@
   }
 
   function renderShippingSelectors(){
-    const origins = [...new Set(shippingRates.map(r=>r.origin))];
-    const regions = [...new Set(shippingRates.map(r=>r.region))];
+    const addOption = '<option value="__add__">＋ 新しい地域を追加</option>';
 
     const originSelect = document.getElementById("input-shipping-origin");
     const prevOrigin = originSelect.value;
-    originSelect.innerHTML = origins.length
-      ? origins.map(o=>'<option value="' + escapeHtml(o) + '">' + escapeHtml(o) + '</option>').join("")
-      : '<option value="">（発地未設定）</option>';
-    if(origins.includes(prevOrigin)) originSelect.value = prevOrigin;
+    originSelect.innerHTML = areaNames.map(o=>'<option value="' + escapeHtml(o) + '">' + escapeHtml(o) + '</option>').join("") + addOption;
+    if(areaNames.includes(prevOrigin)) originSelect.value = prevOrigin;
 
     const regionSelect = document.getElementById("input-shipping-region");
     const prevRegion = regionSelect.value;
-    regionSelect.innerHTML = regions.length
-      ? regions.map(r=>'<option value="' + escapeHtml(r) + '">' + escapeHtml(r) + '</option>').join("")
-      : '<option value="">（地域未設定）</option>';
-    if(regions.includes(prevRegion)) regionSelect.value = prevRegion;
+    regionSelect.innerHTML = areaNames.map(r=>'<option value="' + escapeHtml(r) + '">' + escapeHtml(r) + '</option>').join("") + addOption;
+    if(areaNames.includes(prevRegion)) regionSelect.value = prevRegion;
 
     updateShippingFeeDisplay();
   }
@@ -731,11 +773,13 @@
   }
 
   document.getElementById("btn-add-shipping").addEventListener("click", ()=>{
-    const newRate = {id: nextShippingId++, origin:"本社", size:60, region:"新規地域", fee:0};
+    const fallback = areaNames[0] || "";
+    const newRate = {id: nextShippingId++, origin: fallback, size:60, region: fallback, fee:0};
     shippingRates.push(newRate);
     saveShippingRates();
     renderShippingTable();
     renderShippingSelectors();
+    renderFinalPlans();
   });
   document.getElementById("btn-reset-shipping").addEventListener("click", ()=>{
     if(!confirm("送料設定を初期状態に戻します。よろしいですか？")) return;
@@ -744,9 +788,23 @@
     saveShippingRates();
     renderShippingTable();
     renderShippingSelectors();
+    renderFinalPlans();
   });
   ["input-shipping-origin","input-shipping-region"].forEach(id=>{
-    document.getElementById(id).addEventListener("change", ()=>{
+    document.getElementById(id).addEventListener("change", (e)=>{
+      const select = e.target;
+      if(select.value === "__add__"){
+        const name = prompt("新しい地域名を入力してください");
+        const trimmed = (name || "").trim();
+        const prevValue = areaNames[0] || "";
+        if(trimmed && addAreaName(trimmed)){
+          renderShippingTable();
+          renderShippingSelectors();
+          document.getElementById(id).value = trimmed;
+        }else{
+          select.value = prevValue;
+        }
+      }
       updateShippingFeeDisplay();
       finalPlans.forEach(fp=>{
         fp.shippingOrigin = document.getElementById("input-shipping-origin").value;
@@ -1241,6 +1299,7 @@
   });
 
   // ---------- init ----------
+  areaNames = loadAreaNames();
   shippingRates = loadShippingRates();
   recomputeNextShippingId();
   renderShippingTable();
