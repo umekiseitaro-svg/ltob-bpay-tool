@@ -134,6 +134,8 @@
   .plan-grid .savings .label, .plan-grid .savings .value{color:var(--ok);font-weight:700;font-size:13px;}
   .plan-grid .calc-note{grid-column:1/-1;font-size:11.5px;color:var(--sub);margin:-2px 0 4px;}
   .plan-breakdown{font-size:12.5px;color:var(--sub);margin:4px 0 2px;padding-left:2px;}
+  .size-register-row{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--sub);margin:2px 0 10px;padding-left:2px;flex-wrap:wrap;}
+  .size-register-row select{border:1px solid var(--border);border-radius:6px;padding:5px 8px;font-size:13px;background:#fff;}
   .empty-hint{color:var(--sub);font-size:13px;padding:8px 2px;}
 
   .estimate{
@@ -170,16 +172,15 @@
 
   <section id="section-products">
     <h2>B商品価格リスト</h2>
-    <p class="note">商品名・価格は自由に編集・追加・削除できます。「数量」「単位」を入力すると、同じ単位の商品同士で割高な組み合わせ（例：1000粒×2 は 2000粒×1 より高い）を提案から自動的に除外します。「サイズ」は1個あたりの配送サイズ換算値で、送料のサイズ区分の自動計算に使われます。いずれも空欄のままで構いません。</p>
+    <p class="note">商品名・価格は自由に編集・追加・削除できます。「数量」「単位」を入力すると、同じ単位の商品同士で割高な組み合わせ（例：1000粒×2 は 2000粒×1 より高い）を提案から自動的に除外します。いずれも空欄のままで構いません。</p>
     <p class="note" id="sync-status"></p>
     <div class="table-scroll">
       <table>
         <thead><tr>
           <th style="width:180px;">商品名</th>
-          <th style="width:110px;">価格（円）</th>
-          <th style="width:80px;">数量</th>
-          <th style="width:70px;">単位</th>
-          <th style="width:80px;">サイズ</th>
+          <th style="width:120px;">価格（円）</th>
+          <th style="width:90px;">数量</th>
+          <th style="width:80px;">単位</th>
           <th style="width:60px;"></th>
         </tr></thead>
         <tbody id="product-tbody"></tbody>
@@ -188,6 +189,21 @@
     <div class="toolbar">
       <button class="btn" id="btn-add-product">＋ 商品を追加</button>
       <button class="btn" id="btn-reset-products">初期リストに戻す</button>
+    </div>
+  </section>
+
+  <section id="section-size-registry">
+    <h2>サイズ登録一覧</h2>
+    <p class="note">B払いの商品組み合わせごとに、実際の配送サイズを登録します。宅配便の「サイズ」は実際に梱包した箱を測って決まるため、組み合わせを自動計算する共通の公式はありません。「最終計算表示」で採用した案のサイズを選ぶと、ここに登録されます。</p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr>
+          <th>組み合わせ</th>
+          <th style="width:110px;">サイズ</th>
+          <th style="width:60px;"></th>
+        </tr></thead>
+        <tbody id="size-registry-tbody"></tbody>
+      </table>
     </div>
   </section>
 
@@ -301,13 +317,13 @@
   const REMOTE_API_TOKEN = "YGfcWJDnrN8fXEs2m4ru0AOGFR-z63KW";
 
   const DEFAULT_PRODUCTS = [
-    {id:1, name:"500粒", price:5157, quantity:500, unit:"粒", size:0},
-    {id:2, name:"1000粒", price:9880, quantity:1000, unit:"粒", size:0},
-    {id:3, name:"2000粒", price:17700, quantity:2000, unit:"粒", size:0},
-    {id:4, name:"BCEx 原液 50ml", price:4278, quantity:50, unit:"ml", size:0},
-    {id:5, name:"BCEx 原液 400ml", price:26700, quantity:400, unit:"ml", size:0},
-    {id:6, name:"BCEx ドリンク", price:1100, quantity:0, unit:"", size:0},
-    {id:7, name:"BCEx 503", price:3200, quantity:0, unit:"", size:0},
+    {id:1, name:"500粒", price:5157, quantity:500, unit:"粒"},
+    {id:2, name:"1000粒", price:9880, quantity:1000, unit:"粒"},
+    {id:3, name:"2000粒", price:17700, quantity:2000, unit:"粒"},
+    {id:4, name:"BCEx 原液 50ml", price:4278, quantity:50, unit:"ml"},
+    {id:5, name:"BCEx 原液 400ml", price:26700, quantity:400, unit:"ml"},
+    {id:6, name:"BCEx ドリンク", price:1100, quantity:0, unit:""},
+    {id:7, name:"BCEx 503", price:3200, quantity:0, unit:""},
   ];
 
   let nextProductId = 100;
@@ -359,8 +375,7 @@
       name: String(p.name || ""),
       price: Number(p.price) || 0,
       quantity: Number(p.quantity) || 0,
-      unit: String(p.unit || ""),
-      size: Number(p.size) || 0
+      unit: String(p.unit || "")
     }));
   }
 
@@ -459,13 +474,14 @@
     }
     return s;
   }
-  function comboTotalSize(combo){
-    let s = 0;
-    for(const pid in combo){
-      const p = products.find(p=>p.id === Number(pid));
-      if(p) s += (p.size || 0) * combo[pid];
-    }
-    return s;
+  function comboFromSig(sig){
+    const combo = {};
+    if(!sig) return combo;
+    sig.split("|").forEach(pair=>{
+      const [pid, qty] = pair.split(":");
+      if(pid) combo[pid] = Number(qty);
+    });
+    return combo;
   }
   function comboText(combo){
     const parts = [];
@@ -528,19 +544,6 @@
       });
       tdUnit.appendChild(unitInput);
 
-      const tdSize = document.createElement("td");
-      const sizeInput = document.createElement("input");
-      sizeInput.type = "number";
-      sizeInput.step = "1";
-      sizeInput.min = "0";
-      sizeInput.placeholder = "任意";
-      sizeInput.value = p.size || "";
-      sizeInput.addEventListener("input", ()=>{
-        p.size = parseFloat(sizeInput.value) || 0;
-        saveProducts();
-      });
-      tdSize.appendChild(sizeInput);
-
       const tdActions = document.createElement("td");
       tdActions.className = "row-actions";
       const delBtn = document.createElement("button");
@@ -559,14 +562,13 @@
       tr.appendChild(tdPrice);
       tr.appendChild(tdQty);
       tr.appendChild(tdUnit);
-      tr.appendChild(tdSize);
       tr.appendChild(tdActions);
       tbody.appendChild(tr);
     });
   }
 
   document.getElementById("btn-add-product").addEventListener("click", ()=>{
-    const newProduct = {id: nextProductId++, name:"新規商品", price:0, quantity:0, unit:"", size:0};
+    const newProduct = {id: nextProductId++, name:"新規商品", price:0, quantity:0, unit:""};
     products.push(newProduct);
     saveProducts();
     renderProductTable();
@@ -742,11 +744,76 @@
     return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   }
 
-  function roundToSizeBracket(totalSize){
-    for(const sz of SIZE_BRACKETS){
-      if(totalSize <= sz) return sz;
+  // ---------- size registry（商品組み合わせごとに直接登録するサイズ） ----------
+  const SIZE_REGISTRY_KEY = "ltob_bpay_size_registry_v1";
+  let sizeRegistry = {}; // { comboSig: sizeBracket }
+
+  function loadSizeRegistry(){
+    try{
+      const raw = localStorage.getItem(SIZE_REGISTRY_KEY);
+      if(raw){
+        const parsed = JSON.parse(raw);
+        if(parsed && typeof parsed === "object") return parsed;
+      }
+    }catch(e){}
+    return {};
+  }
+  function saveSizeRegistry(){
+    try{ localStorage.setItem(SIZE_REGISTRY_KEY, JSON.stringify(sizeRegistry)); }catch(e){}
+  }
+  function getRegisteredSize(sig){
+    return Object.prototype.hasOwnProperty.call(sizeRegistry, sig) ? sizeRegistry[sig] : null;
+  }
+  function registerSize(sig, size){
+    sizeRegistry[sig] = size;
+    saveSizeRegistry();
+  }
+  function unregisterSize(sig){
+    delete sizeRegistry[sig];
+    saveSizeRegistry();
+  }
+
+  function renderSizeRegistryTable(){
+    const tbody = document.getElementById("size-registry-tbody");
+    tbody.innerHTML = "";
+    const sigs = Object.keys(sizeRegistry);
+    if(sigs.length === 0){
+      tbody.innerHTML = '<tr><td colspan="3" class="empty-hint">まだ登録された組み合わせがありません。「最終計算表示」でサイズを選ぶと、ここに追加されます。</td></tr>';
+      return;
     }
-    return SIZE_BRACKETS[SIZE_BRACKETS.length - 1];
+    sigs.forEach(sig=>{
+      const tr = document.createElement("tr");
+
+      const tdCombo = document.createElement("td");
+      tdCombo.textContent = comboText(comboFromSig(sig));
+
+      const tdSize = document.createElement("td");
+      const select = document.createElement("select");
+      select.innerHTML = SIZE_BRACKETS.map(sz => '<option value="' + sz + '">' + sz + 'サイズ</option>').join("");
+      select.value = sizeRegistry[sig];
+      select.addEventListener("change", ()=>{
+        registerSize(sig, Number(select.value));
+        renderFinalPlans();
+      });
+      tdSize.appendChild(select);
+
+      const tdActions = document.createElement("td");
+      tdActions.className = "row-actions";
+      const delBtn = document.createElement("button");
+      delBtn.className = "btn small danger";
+      delBtn.textContent = "削除";
+      delBtn.addEventListener("click", ()=>{
+        unregisterSize(sig);
+        renderSizeRegistryTable();
+        renderFinalPlans();
+      });
+      tdActions.appendChild(delBtn);
+
+      tr.appendChild(tdCombo);
+      tr.appendChild(tdSize);
+      tr.appendChild(tdActions);
+      tbody.appendChild(tr);
+    });
   }
 
   function getShippingFeeFor(origin, size, region){
@@ -952,8 +1019,7 @@
       seen.add(sig);
       if(isComboDominated(combo)) continue;
       const rawSum = comboRawSum(combo);
-      const totalSize = comboTotalSize(combo);
-      results.push({sig, netSum:c.sum, rawSum, totalSize, count:c.count, combo, diff:c.diff});
+      results.push({sig, netSum:c.sum, rawSum, count:c.count, combo, diff:c.diff});
       if(results.length >= 6) break;
     }
     return results;
@@ -1054,7 +1120,6 @@
       sig: prop.sig,
       combo: prop.combo,
       rawSum: prop.rawSum,
-      totalSize: prop.totalSize,
       premium: num("input-premium"),
       taxRate: num("input-tax-rate"),
       totalCash: num("input-total-cash"),
@@ -1082,10 +1147,11 @@
     const bPaySubtotal = bPay - baseValue; // B払い 合計
     const cashPortion = fp.totalCash - bPaySubtotal; // 現金（商品分）
     const cashPortionClamped = Math.max(cashPortion, 0);
-    const sizeBracket = roundToSizeBracket(fp.totalSize || 0);
-    const shippingFeeFound = getShippingFeeFor(fp.shippingOrigin, sizeBracket, fp.shippingRegion);
+    const sizeBracket = getRegisteredSize(fp.sig); // null = この組み合わせのサイズが未登録
+    const sizeMissing = sizeBracket === null;
+    const shippingFeeFound = sizeMissing ? null : getShippingFeeFor(fp.shippingOrigin, sizeBracket, fp.shippingRegion);
     const shippingFee = shippingFeeFound || 0;
-    const shippingRateMissing = shippingFeeFound === null;
+    const shippingRateMissing = !sizeMissing && shippingFeeFound === null;
     const taxableCash = cashPortionClamped + shippingFee;
     const tax = Math.floor(taxableCash * (fp.taxRate / 100));
     const subtotal = taxableCash + tax; // 現金 合計
@@ -1093,7 +1159,7 @@
     const allCashTax = (fp.totalCash + shippingFee) * (fp.taxRate / 100);
     const savingsGoods = baseValue + bPay * (fp.taxRate / 100); // すべて現金払いの場合とくらべてお得な金額 = 割引額 + (定価 × 消費税率)
     const savingsTax = allCashTax - tax; // 消費税のお得
-    return {bPay, baseValue, bPaySubtotal, cashPortion, sizeBracket, shippingFee, shippingRateMissing, tax, subtotal, grandTotal, allCashTax, savingsGoods, savingsTax};
+    return {bPay, baseValue, bPaySubtotal, cashPortion, sizeBracket, sizeMissing, shippingFee, shippingRateMissing, tax, subtotal, grandTotal, allCashTax, savingsGoods, savingsTax};
   }
 
   function renderFinalPlans(){
@@ -1151,6 +1217,26 @@
       breakdown.className = "plan-breakdown";
       breakdown.textContent = "B払い内訳：" + comboText(fp.combo);
 
+      const sizeRow = document.createElement("div");
+      sizeRow.className = "size-register-row";
+      const sizeLabel = document.createElement("span");
+      sizeLabel.textContent = "この組み合わせの配送サイズ：";
+      const sizeSelect = document.createElement("select");
+      sizeSelect.innerHTML = '<option value="">未登録</option>' +
+        SIZE_BRACKETS.map(sz => '<option value="' + sz + '">' + sz + 'サイズ</option>').join("");
+      sizeSelect.value = numbers.sizeBracket !== null ? String(numbers.sizeBracket) : "";
+      sizeSelect.addEventListener("change", ()=>{
+        if(sizeSelect.value === ""){
+          unregisterSize(fp.sig);
+        }else{
+          registerSize(fp.sig, Number(sizeSelect.value));
+        }
+        renderSizeRegistryTable();
+        renderFinalPlans();
+      });
+      sizeRow.appendChild(sizeLabel);
+      sizeRow.appendChild(sizeSelect);
+
       const grid = document.createElement("div");
       grid.className = "plan-grid";
       grid.innerHTML =
@@ -1160,7 +1246,7 @@
         row("B払い 合計", yen(numbers.bPaySubtotal), "subtotal") +
         divider() +
         row("現金（商品分）", yen(negative ? 0 : numbers.cashPortion)) +
-        row("送料（税抜・" + numbers.sizeBracket + "サイズ）", yen(numbers.shippingFee)) +
+        row("送料（税抜）", numbers.sizeMissing ? "サイズ未登録" : yen(numbers.shippingFee)) +
         row("消費税", yen(negative ? 0 : numbers.tax)) +
         divider() +
         row("現金 合計", yen(negative ? 0 : numbers.subtotal), "subtotal") +
@@ -1177,13 +1263,19 @@
         warn.textContent = "⚠ B払い希望額が「すべて現金の場合の金額」を超えています。金額を見直してください。";
         card.appendChild(warn);
       }
-      if(numbers.shippingRateMissing){
+      if(numbers.sizeMissing){
+        const warn = document.createElement("p");
+        warn.className = "note warn";
+        warn.textContent = "⚠ この組み合わせの配送サイズが未登録です。下のプルダウンから選択してください（0円として計算中）。";
+        card.appendChild(warn);
+      }else if(numbers.shippingRateMissing){
         const warn = document.createElement("p");
         warn.className = "note warn";
         warn.textContent = "⚠ 発地「" + (fp.shippingOrigin || "未設定") + "」・" + numbers.sizeBracket + "サイズ・地域「" + (fp.shippingRegion || "未設定") + "」の送料が登録されていません（0円として計算中）。「送料設定」に追加してください。";
         card.appendChild(warn);
       }
       card.appendChild(breakdown);
+      card.appendChild(sizeRow);
       card.appendChild(grid);
       holder.appendChild(card);
     });
@@ -1238,7 +1330,7 @@
     cashBlock.innerHTML =
       '<h3>現金</h3>' +
       '<div class="estimate-row"><span>税抜（商品分）</span><span>' + yen(negative ? 0 : numbers.cashPortion) + '</span></div>' +
-      '<div class="estimate-row"><span>送料（税抜・' + numbers.sizeBracket + 'サイズ）</span><span>' + yen(numbers.shippingFee) + '</span></div>' +
+      '<div class="estimate-row"><span>送料（税抜' + (numbers.sizeMissing ? "" : "・" + numbers.sizeBracket + "サイズ") + '）</span><span>' + (numbers.sizeMissing ? "サイズ未登録" : yen(numbers.shippingFee)) + '</span></div>' +
       '<div class="estimate-row"><span>消費税</span><span>' + yen(negative ? 0 : numbers.tax) + '</span></div>' +
       '<div class="estimate-row total"><span>総額（税込）</span><span>' + yen(negative ? 0 : numbers.subtotal) + '</span></div>';
     box.appendChild(cashBlock);
@@ -1301,9 +1393,11 @@
   // ---------- init ----------
   areaNames = loadAreaNames();
   shippingRates = loadShippingRates();
+  sizeRegistry = loadSizeRegistry();
   recomputeNextShippingId();
   renderShippingTable();
   renderShippingSelectors();
+  renderSizeRegistryTable();
   renderProposals();
   renderFinalPlans();
   initProducts();
