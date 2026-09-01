@@ -34,6 +34,17 @@
   header h1{font-size:22px;margin:0 0 4px;}
   header p{margin:0;color:var(--sub);font-size:13px;}
 
+  .quote-name-banner{
+    background:var(--accent-soft);border:1px solid var(--accent);border-radius:var(--radius);
+    padding:12px 16px;margin-bottom:16px;font-size:15px;font-weight:700;color:var(--accent-dark);
+    display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  }
+  .quote-name-banner .label{font-weight:600;color:var(--sub);font-size:13px;}
+  .status-badge{
+    font-size:11px;font-weight:700;padding:3px 10px;border-radius:99px;background:#f0f2f5;color:var(--sub);
+  }
+  .status-badge.confirmed{background:var(--ok-soft);color:var(--ok);}
+
   section{
     background:var(--card);
     border:1px solid var(--border);
@@ -169,6 +180,11 @@
     <p>事粒交換用の計算ツール。現金とB払い(粒)を組み合わせた支払いプランを作成します。</p>
   </header>
 
+  <div id="quote-name-banner" class="quote-name-banner" style="display:none;">
+    <span class="label">計算書：</span><span id="quote-name-display"></span>
+    <span id="quote-status-badge" class="status-badge"></span>
+  </div>
+
   <section id="section-saved-quotes">
     <h2>計算書の保存・読み込み</h2>
     <p class="note" id="current-user-display"></p>
@@ -288,6 +304,14 @@
   <section id="section-estimate">
     <h2>計算書</h2>
     <div id="estimate-holder"></div>
+  </section>
+
+  <section id="section-confirm">
+    <h2>確定</h2>
+    <p class="note">内容がまとまったら「この内容で確定する」を押してください。管理者にメールで通知が届きます。確定後も引き続き編集・保存できます。</p>
+    <p class="note warn" id="confirm-hint" style="display:none;">確定する前に、まず上の「現在の内容を名前を付けて保存」で計算書を保存してください。</p>
+    <button class="btn primary" id="btn-confirm">この内容で確定する</button>
+    <p class="note" id="confirm-status"></p>
   </section>
 </div>
 
@@ -1324,6 +1348,26 @@
   let editingQuoteId = null;
   let editingQuoteOwner = null;
   let editingQuoteName = "";
+  let editingQuoteStatus = "draft";
+  let editingQuoteConfirmedAt = null;
+
+  function updateQuoteNameBanner(){
+    const banner = document.getElementById("quote-name-banner");
+    const badge = document.getElementById("quote-status-badge");
+    if(!editingQuoteId){
+      banner.style.display = "none";
+      return;
+    }
+    banner.style.display = "";
+    document.getElementById("quote-name-display").textContent = editingQuoteName;
+    if(editingQuoteStatus === "confirmed"){
+      badge.textContent = "確定済み";
+      badge.className = "status-badge confirmed";
+    }else{
+      badge.textContent = "未確定";
+      badge.className = "status-badge";
+    }
+  }
 
   async function fetchQuotesFromServer(){
     if(!REMOTE_API_URL) return [];
@@ -1424,8 +1468,12 @@
         editingQuoteId = q.id;
         editingQuoteOwner = q.owner;
         editingQuoteName = q.name;
+        editingQuoteStatus = q.status || "draft";
+        editingQuoteConfirmedAt = q.confirmedAt || null;
         restoreState(q.state);
         renderSavedQuotesTable();
+        updateQuoteNameBanner();
+        updateConfirmUI();
       });
       tdLoad.appendChild(loadBtn);
 
@@ -1438,7 +1486,12 @@
         if(!confirm("「" + q.name + "」を削除します。よろしいですか？")) return;
         const ok = await postQuoteAction("delete", { id: q.id });
         if(ok){
-          if(editingQuoteId === q.id){ editingQuoteId = null; editingQuoteOwner = null; editingQuoteName = ""; }
+          if(editingQuoteId === q.id){
+            editingQuoteId = null; editingQuoteOwner = null; editingQuoteName = "";
+            editingQuoteStatus = "draft"; editingQuoteConfirmedAt = null;
+            updateQuoteNameBanner();
+            updateConfirmUI();
+          }
           await refreshQuotesList();
         }else{
           alert("削除に失敗しました。通信状況をご確認ください。");
@@ -1459,6 +1512,10 @@
     editingQuoteId = null;
     editingQuoteOwner = null;
     editingQuoteName = "";
+    editingQuoteStatus = "draft";
+    editingQuoteConfirmedAt = null;
+    updateQuoteNameBanner();
+    updateConfirmUI();
     document.getElementById("input-premium").value = "";
     document.getElementById("input-total-cash").value = "";
     document.getElementById("input-desired-b").value = "";
@@ -1485,11 +1542,16 @@
 
     if(editingQuoteId){
       const ok = await postQuoteAction("update", {
-        quote: { id: editingQuoteId, owner: editingQuoteOwner || currentUser, name: trimmed, savedAt, state }
+        quote: {
+          id: editingQuoteId, owner: editingQuoteOwner || currentUser, name: trimmed, savedAt, state,
+          status: editingQuoteStatus, confirmedAt: editingQuoteConfirmedAt
+        }
       });
       if(ok){
         editingQuoteName = trimmed;
         alert("「" + trimmed + "」を更新しました。");
+        updateQuoteNameBanner();
+        updateConfirmUI();
         await refreshQuotesList();
       }else{
         alert("保存に失敗しました。通信状況をご確認ください。");
@@ -1497,13 +1559,17 @@
     }else{
       const newId = "q_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
       const ok = await postQuoteAction("add", {
-        quote: { id: newId, owner: currentUser, name: trimmed, savedAt, state }
+        quote: { id: newId, owner: currentUser, name: trimmed, savedAt, state, status: "draft", confirmedAt: null }
       });
       if(ok){
         editingQuoteId = newId;
         editingQuoteOwner = currentUser;
         editingQuoteName = trimmed;
+        editingQuoteStatus = "draft";
+        editingQuoteConfirmedAt = null;
         alert("「" + trimmed + "」として保存しました。");
+        updateQuoteNameBanner();
+        updateConfirmUI();
         await refreshQuotesList();
       }else{
         alert("保存に失敗しました。通信状況をご確認ください。");
@@ -1532,7 +1598,11 @@
           editingQuoteId = target.id;
           editingQuoteOwner = target.owner;
           editingQuoteName = target.name;
+          editingQuoteStatus = target.status || "draft";
+          editingQuoteConfirmedAt = target.confirmedAt || null;
           restoreState(target.state);
+          updateQuoteNameBanner();
+          updateConfirmUI();
         }else{
           alert("指定された計算書が見つかりませんでした。");
         }
@@ -1541,10 +1611,47 @@
     await refreshQuotesList();
   }
 
+  // ---------- 確定 ----------
+  function updateConfirmUI(){
+    const hint = document.getElementById("confirm-hint");
+    const btn = document.getElementById("btn-confirm");
+    const status = document.getElementById("confirm-status");
+    if(!editingQuoteId){
+      hint.style.display = "";
+      btn.disabled = true;
+      status.textContent = "";
+      return;
+    }
+    hint.style.display = "none";
+    btn.disabled = false;
+    status.textContent = editingQuoteStatus === "confirmed"
+      ? "確定済みです（" + new Date(editingQuoteConfirmedAt).toLocaleString("ja-JP") + "）"
+      : "";
+  }
+  document.getElementById("btn-confirm").addEventListener("click", async () => {
+    if(!editingQuoteId) return;
+    if(!confirm("この内容で確定します。管理者にメールで通知されます。よろしいですか？")) return;
+    const btn = document.getElementById("btn-confirm");
+    btn.disabled = true;
+    const ok = await postQuoteAction("confirm", { id: editingQuoteId });
+    if(ok){
+      editingQuoteStatus = "confirmed";
+      editingQuoteConfirmedAt = Date.now();
+      updateQuoteNameBanner();
+      updateConfirmUI();
+      await refreshQuotesList();
+    }else{
+      alert("確定に失敗しました。通信状況をご確認ください。");
+      btn.disabled = false;
+    }
+  });
+
   // ---------- init ----------
   sizeRegistry = loadSizeRegistry();
   renderSizeRegistryTable();
   updateShippingNeededUI();
+  updateQuoteNameBanner();
+  updateConfirmUI();
   initQuotes();
   renderProposals();
   renderFinalPlans();

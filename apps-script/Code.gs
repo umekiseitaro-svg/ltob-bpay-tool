@@ -9,7 +9,10 @@ const PRODUCTS_SHEET_NAME = "products";
 const PRODUCTS_HEADERS = ["id", "name", "price", "quantity", "unit", "d", "w", "h"];
 
 const QUOTES_SHEET_NAME = "quotes";
-const QUOTES_HEADERS = ["id", "owner", "name", "savedAt", "stateJson"];
+const QUOTES_HEADERS = ["id", "owner", "name", "savedAt", "stateJson", "status", "confirmedAt"];
+
+// 計算書が確定されたときに通知するメールアドレス
+const ADMIN_NOTIFY_EMAIL = "umeki.seitaro@gmail.com";
 
 const SHIPPING_RATES_SHEET_NAME = "shipping_rates";
 const SHIPPING_RATES_HEADERS = ["id", "origin", "size", "region", "fee"];
@@ -100,7 +103,15 @@ function readQuotes_() {
   return rows.map(r => {
     let state = {};
     try { state = JSON.parse(r[4] || "{}"); } catch (err) {}
-    return { id: r[0], owner: r[1], name: r[2], savedAt: r[3], state: state };
+    return {
+      id: r[0],
+      owner: r[1],
+      name: r[2],
+      savedAt: r[3],
+      state: state,
+      status: r[5] || "draft",
+      confirmedAt: r[6] || null
+    };
   });
 }
 
@@ -114,7 +125,10 @@ function handleQuotesPost_(body) {
     if (action === "add") {
       const q = body.quote;
       if (!q || !q.id) return jsonOutput_({ error: "invalid_payload" });
-      sheet.appendRow([q.id, q.owner || "", q.name || "", q.savedAt || Date.now(), JSON.stringify(q.state || {})]);
+      sheet.appendRow([
+        q.id, q.owner || "", q.name || "", q.savedAt || Date.now(), JSON.stringify(q.state || {}),
+        q.status || "draft", q.confirmedAt || ""
+      ]);
       return jsonOutput_({ ok: true });
     }
 
@@ -124,8 +138,21 @@ function handleQuotesPost_(body) {
       const rowIndex = findQuoteRow_(sheet, q.id);
       if (rowIndex === -1) return jsonOutput_({ error: "not_found" });
       sheet.getRange(rowIndex, 1, 1, QUOTES_HEADERS.length).setValues(
-        [[q.id, q.owner || "", q.name || "", q.savedAt || Date.now(), JSON.stringify(q.state || {})]]
+        [[q.id, q.owner || "", q.name || "", q.savedAt || Date.now(), JSON.stringify(q.state || {}),
+          q.status || "draft", q.confirmedAt || ""]]
       );
+      return jsonOutput_({ ok: true });
+    }
+
+    if (action === "confirm") {
+      const id = body.id;
+      if (!id) return jsonOutput_({ error: "invalid_payload" });
+      const rowIndex = findQuoteRow_(sheet, id);
+      if (rowIndex === -1) return jsonOutput_({ error: "not_found" });
+      const confirmedAt = Date.now();
+      sheet.getRange(rowIndex, 6, 1, 2).setValues([["confirmed", confirmedAt]]);
+      const row = sheet.getRange(rowIndex, 1, 1, QUOTES_HEADERS.length).getValues()[0];
+      notifyQuoteConfirmed_({ id: row[0], owner: row[1], name: row[2] });
       return jsonOutput_({ ok: true });
     }
 
@@ -141,6 +168,24 @@ function handleQuotesPost_(body) {
     return jsonOutput_({ error: "unknown_action" });
   } finally {
     lock.releaseLock();
+  }
+}
+
+function notifyQuoteConfirmed_(q) {
+  if (!ADMIN_NOTIFY_EMAIL) return;
+  try {
+    MailApp.sendEmail({
+      to: ADMIN_NOTIFY_EMAIL,
+      subject: "【B払い計算ツール】計算書が確定されました：" + q.name,
+      body:
+        "計算書が確定されました。\n\n" +
+        "担当者：" + q.owner + "\n" +
+        "計算書名：" + q.name + "\n" +
+        "確定日時：" + new Date().toLocaleString("ja-JP") + "\n\n" +
+        "管理者ページから内容をご確認ください。"
+    });
+  } catch (err) {
+    // メール送信に失敗しても確定処理自体は成功させる
   }
 }
 
