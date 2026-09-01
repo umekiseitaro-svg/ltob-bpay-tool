@@ -48,6 +48,12 @@
   .field input[type=password]{
     border:1px solid var(--border);border-radius:8px;padding:9px 10px;font-size:15px;width:260px;max-width:100%;
   }
+  .link-result{display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap;}
+  .link-result input{
+    flex:1;min-width:220px;border:1px solid var(--border);border-radius:8px;padding:9px 10px;
+    font-size:13px;background:#f8f9fb;color:var(--text);
+  }
+  .copied-msg{color:var(--ok);font-size:12px;margin-left:4px;}
 </style>
 </head>
 <body>
@@ -65,6 +71,21 @@
     </div>
     <button class="btn primary" id="btn-login">開く</button>
     <p class="note" id="login-error" style="display:none;color:var(--danger);">合言葉が違います。もう一度お試しください。</p>
+  </section>
+
+  <section id="section-generate-link" style="display:none;">
+    <h2>入口リンクを発行</h2>
+    <p class="note">担当者名を入力すると、その人専用の計算ツールへの入口リンクが作成されます。作成したリンクをコピーして、LINEやメールなどでその人に送ってください。</p>
+    <div class="field">
+      <label>担当者名</label>
+      <input type="text" id="input-owner-name" placeholder="例：田中">
+    </div>
+    <button class="btn primary" id="btn-generate-link">リンクを作成</button>
+    <div class="link-result" id="link-result" style="display:none;">
+      <input type="text" id="generated-link" readonly>
+      <button class="btn small" id="btn-copy-link">コピー</button>
+      <span class="copied-msg" id="copied-msg" style="display:none;">コピーしました</span>
+    </div>
   </section>
 
   <section id="section-list" style="display:none;">
@@ -100,6 +121,7 @@
 
   function showList(){
     document.getElementById("section-login").style.display = "none";
+    document.getElementById("section-generate-link").style.display = "";
     document.getElementById("section-list").style.display = "";
     refresh();
   }
@@ -230,6 +252,37 @@
   }
 
   document.getElementById("input-filter").addEventListener("input", render);
+
+  function generateLink(){
+    const nameInput = document.getElementById("input-owner-name");
+    const name = nameInput.value.trim();
+    if(!name){
+      nameInput.focus();
+      return;
+    }
+    const url = new URL("index.html", window.location.href);
+    url.searchParams.set("u", name);
+    document.getElementById("generated-link").value = url.toString();
+    document.getElementById("link-result").style.display = "";
+    document.getElementById("copied-msg").style.display = "none";
+  }
+
+  document.getElementById("btn-generate-link").addEventListener("click", generateLink);
+  document.getElementById("input-owner-name").addEventListener("keydown", (e) => {
+    if(e.key === "Enter") generateLink();
+  });
+  document.getElementById("btn-copy-link").addEventListener("click", async () => {
+    const field = document.getElementById("generated-link");
+    field.select();
+    try{
+      await navigator.clipboard.writeText(field.value);
+    }catch(e){
+      document.execCommand("copy");
+    }
+    const msg = document.getElementById("copied-msg");
+    msg.style.display = "";
+    setTimeout(() => { msg.style.display = "none"; }, 2000);
+  });
 })();
 </script>
 </body>
