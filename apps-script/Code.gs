@@ -11,6 +11,11 @@ const PRODUCTS_HEADERS = ["id", "name", "price", "quantity", "unit", "d", "w", "
 const QUOTES_SHEET_NAME = "quotes";
 const QUOTES_HEADERS = ["id", "owner", "name", "savedAt", "stateJson"];
 
+const SHIPPING_RATES_SHEET_NAME = "shipping_rates";
+const SHIPPING_RATES_HEADERS = ["id", "origin", "size", "region", "fee"];
+const SHIPPING_AREAS_SHEET_NAME = "shipping_areas";
+const SHIPPING_AREAS_HEADERS = ["name"];
+
 // ここを必ず自分だけが知っている文字列に変更してください（第三者による書き換え防止用）
 const API_TOKEN = "YGfcWJDnrN8fXEs2m4ru0AOGFR-z63KW";
 
@@ -18,6 +23,9 @@ function doGet(e) {
   const type = (e.parameter && e.parameter.type) || "products";
   if (type === "quotes") {
     return jsonOutput_({ quotes: readQuotes_() });
+  }
+  if (type === "shipping") {
+    return jsonOutput_({ areaNames: readShippingAreas_(), rates: readShippingRates_() });
   }
   return jsonOutput_({ products: readProducts_() });
 }
@@ -36,6 +44,9 @@ function doPost(e) {
 
   if (body.type === "quotes") {
     return handleQuotesPost_(body);
+  }
+  if (body.type === "shipping") {
+    return handleShippingPost_(body);
   }
   return handleProductsPost_(body);
 }
@@ -139,6 +150,51 @@ function findQuoteRow_(sheet, id) {
     if (String(data[i][0]) === String(id)) return i + 1; // 1-indexed row number
   }
   return -1;
+}
+
+// ---------- shipping（送料設定。管理者のみ編集する想定のため products と同じ一括置き換え方式） ----------
+function readShippingRates_() {
+  const sheet = getSheet_(SHIPPING_RATES_SHEET_NAME, SHIPPING_RATES_HEADERS);
+  const data = sheet.getDataRange().getValues();
+  const rows = data.slice(1).filter(r => r[0] !== "" && r[0] !== null);
+  return rows.map(r => ({ id: r[0], origin: r[1], size: r[2], region: r[3], fee: r[4] || 0 }));
+}
+
+function readShippingAreas_() {
+  const sheet = getSheet_(SHIPPING_AREAS_SHEET_NAME, SHIPPING_AREAS_HEADERS);
+  const data = sheet.getDataRange().getValues();
+  const rows = data.slice(1).filter(r => r[0] !== "" && r[0] !== null);
+  return rows.map(r => r[0]);
+}
+
+function handleShippingPost_(body) {
+  if (!Array.isArray(body.rates) || !Array.isArray(body.areaNames)) {
+    return jsonOutput_({ error: "invalid_payload" });
+  }
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const rateSheet = getSheet_(SHIPPING_RATES_SHEET_NAME, SHIPPING_RATES_HEADERS);
+    const rateRows = [SHIPPING_RATES_HEADERS].concat(
+      body.rates.map(r => [r.id, r.origin, r.size, r.region, r.fee || 0])
+    );
+    const prevRateLastRow = rateSheet.getLastRow();
+    rateSheet.getRange(1, 1, rateRows.length, SHIPPING_RATES_HEADERS.length).setValues(rateRows);
+    if (prevRateLastRow > rateRows.length) {
+      rateSheet.getRange(rateRows.length + 1, 1, prevRateLastRow - rateRows.length, SHIPPING_RATES_HEADERS.length).clearContent();
+    }
+
+    const areaSheet = getSheet_(SHIPPING_AREAS_SHEET_NAME, SHIPPING_AREAS_HEADERS);
+    const areaRows = [SHIPPING_AREAS_HEADERS].concat(body.areaNames.map(name => [name]));
+    const prevAreaLastRow = areaSheet.getLastRow();
+    areaSheet.getRange(1, 1, areaRows.length, SHIPPING_AREAS_HEADERS.length).setValues(areaRows);
+    if (prevAreaLastRow > areaRows.length) {
+      areaSheet.getRange(areaRows.length + 1, 1, prevAreaLastRow - areaRows.length, SHIPPING_AREAS_HEADERS.length).clearContent();
+    }
+  } finally {
+    lock.releaseLock();
+  }
+  return jsonOutput_({ ok: true });
 }
 
 // ---------- common ----------

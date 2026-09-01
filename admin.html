@@ -33,6 +33,16 @@
   th,td{padding:8px 6px;border-bottom:1px solid var(--border);text-align:left;white-space:nowrap;}
   th{font-size:12px;color:var(--sub);font-weight:600;}
   .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  td input[type=text], td input[type=number], td select{
+    width:100%;border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:14px;background:#fff;white-space:normal;
+  }
+  td.num{text-align:right;}
+  td.num input{text-align:right;}
+  .toolbar{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;}
+  #sync-status{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:99px;background:#f0f2f5;font-size:11.5px;}
+  #sync-status.synced{background:var(--ok-soft);color:var(--ok);}
+  #sync-status.offline, #sync-status.error{background:var(--danger-soft);color:var(--danger);}
+  #sync-status.busy{background:var(--accent-soft);color:var(--accent-dark);}
   .btn{
     border:1px solid var(--border);background:#fff;border-radius:8px;padding:7px 14px;
     font-size:13px;cursor:pointer;color:var(--text);text-decoration:none;display:inline-block;
@@ -93,6 +103,53 @@
     </div>
   </section>
 
+  <section id="section-products" style="display:none;">
+    <h2>B商品価格リストの編集</h2>
+    <p class="note">商品名・価格は自由に編集・追加・削除できます。「数量」「単位」を入力すると、同じ単位の商品同士で割高な組み合わせを提案から自動的に除外します。「縦・横・高さ」(cm)を入力すると、配送サイズの自動算出に使われます。ここでの変更は全員の計算ツールに反映されます。</p>
+    <p class="note" id="sync-status"></p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr>
+          <th style="width:160px;">商品名</th>
+          <th style="width:100px;">価格（円）</th>
+          <th style="width:70px;">数量</th>
+          <th style="width:60px;">単位</th>
+          <th style="width:60px;">縦(cm)</th>
+          <th style="width:60px;">横(cm)</th>
+          <th style="width:60px;">高さ(cm)</th>
+          <th style="width:60px;"></th>
+        </tr></thead>
+        <tbody id="product-tbody"></tbody>
+      </table>
+    </div>
+    <div class="toolbar">
+      <button class="btn" id="btn-add-product">＋ 商品を追加</button>
+      <button class="btn" id="btn-reset-products">初期リストに戻す</button>
+    </div>
+  </section>
+
+  <section id="section-shipping" style="display:none;">
+    <h2>送料設定の編集</h2>
+    <p class="note">「発地」「サイズ」「地域」の組み合わせごとに送料を登録します。必要な組み合わせだけ登録すればよく、全マス埋める必要はありません。ここでの変更は全員の計算ツールに反映されます。</p>
+    <p class="note" id="shipping-sync-status"></p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr>
+          <th style="width:140px;">発地</th>
+          <th style="width:100px;">サイズ</th>
+          <th style="width:140px;">地域</th>
+          <th style="width:110px;">送料（円）</th>
+          <th style="width:60px;"></th>
+        </tr></thead>
+        <tbody id="shipping-tbody"></tbody>
+      </table>
+    </div>
+    <div class="toolbar">
+      <button class="btn" id="btn-add-shipping">＋ 組み合わせを追加</button>
+      <button class="btn" id="btn-reset-shipping">初期リストに戻す</button>
+    </div>
+  </section>
+
   <section id="section-list" style="display:none;">
     <h2>保存された計算書一覧</h2>
     <div class="field">
@@ -127,8 +184,12 @@
   function showList(){
     document.getElementById("section-login").style.display = "none";
     document.getElementById("section-generate-link").style.display = "";
+    document.getElementById("section-products").style.display = "";
+    document.getElementById("section-shipping").style.display = "";
     document.getElementById("section-list").style.display = "";
     refresh();
+    initProducts();
+    initShipping();
   }
 
   function tryLogin(){
@@ -302,6 +363,361 @@
     const msg = document.getElementById("copied-msg");
     msg.style.display = "";
     setTimeout(() => { msg.style.display = "none"; }, 2000);
+  });
+
+  // ---------- B商品価格リストの編集 ----------
+  const DEFAULT_PRODUCTS = [
+    {id:1, name:"500粒", price:5157, quantity:500, unit:"粒", d:0, w:0, h:0},
+    {id:2, name:"1000粒", price:9880, quantity:1000, unit:"粒", d:0, w:0, h:0},
+    {id:3, name:"2000粒", price:17700, quantity:2000, unit:"粒", d:0, w:0, h:0},
+    {id:4, name:"BCEx 原液 50ml", price:4278, quantity:50, unit:"ml", d:0, w:0, h:0},
+    {id:5, name:"BCEx 原液 400ml", price:26700, quantity:400, unit:"ml", d:0, w:0, h:0},
+    {id:6, name:"BCEx ドリンク", price:1100, quantity:0, unit:"", d:0, w:0, h:0},
+    {id:7, name:"BCEx 503", price:3200, quantity:0, unit:"", d:0, w:0, h:0},
+  ];
+  let products = [];
+  let nextProductId = 100;
+  let productSyncTimer = null;
+
+  function recomputeNextProductId(){
+    nextProductId = products.length ? Math.max(...products.map(p=>p.id)) + 1 : 100;
+  }
+  function normalizeProducts(list){
+    return list.map(p=>({
+      id: Number(p.id),
+      name: String(p.name || ""),
+      price: Number(p.price) || 0,
+      quantity: Number(p.quantity) || 0,
+      unit: String(p.unit || ""),
+      d: Number(p.d) || 0,
+      w: Number(p.w) || 0,
+      h: Number(p.h) || 0
+    }));
+  }
+  function setSyncStatus(state){
+    const el = document.getElementById("sync-status");
+    if(!el) return;
+    el.className = state;
+    const labels = {
+      loading: "🔄 商品リストを読み込み中…",
+      busy: "🔄 保存中…",
+      synced: "✅ 保存しました（全員の計算ツールに反映されます）",
+      error: "⚠ 保存に失敗しました（通信状況をご確認ください）"
+    };
+    el.textContent = labels[state] || "";
+  }
+  function saveProducts(){
+    setSyncStatus("busy");
+    clearTimeout(productSyncTimer);
+    productSyncTimer = setTimeout(pushProductsToRemote, 800);
+  }
+  async function pushProductsToRemote(){
+    try{
+      const res = await fetch(REMOTE_API_URL, {
+        method: "POST",
+        body: JSON.stringify({ token: REMOTE_API_TOKEN, products })
+      });
+      const data = await res.json();
+      setSyncStatus(data && data.ok ? "synced" : "error");
+    }catch(e){
+      setSyncStatus("error");
+    }
+  }
+  async function initProducts(){
+    setSyncStatus("loading");
+    try{
+      const res = await fetch(REMOTE_API_URL);
+      const data = await res.json();
+      const hasData = data && Array.isArray(data.products) && data.products.length > 0;
+      products = hasData ? normalizeProducts(data.products) : DEFAULT_PRODUCTS.map(p=>({...p}));
+      recomputeNextProductId();
+      renderProductTable();
+      if(hasData){
+        setSyncStatus("synced");
+      }else{
+        setSyncStatus("");
+        await pushProductsToRemote(); // 共有シートがまだ空 → 現在のリストで初期化（シードする）
+      }
+    }catch(e){
+      products = DEFAULT_PRODUCTS.map(p=>({...p}));
+      recomputeNextProductId();
+      renderProductTable();
+      setSyncStatus("error");
+    }
+  }
+
+  function renderProductTable(){
+    const tbody = document.getElementById("product-tbody");
+    tbody.innerHTML = "";
+    products.forEach(p=>{
+      const tr = document.createElement("tr");
+
+      const tdName = document.createElement("td");
+      const nameInput = document.createElement("input");
+      nameInput.type = "text";
+      nameInput.value = p.name;
+      nameInput.addEventListener("input", ()=>{ p.name = nameInput.value; saveProducts(); });
+      tdName.appendChild(nameInput);
+
+      const tdPrice = document.createElement("td");
+      tdPrice.className = "num";
+      const priceInput = document.createElement("input");
+      priceInput.type = "number";
+      priceInput.step = "1";
+      priceInput.min = "0";
+      priceInput.value = p.price;
+      priceInput.addEventListener("input", ()=>{ p.price = parseFloat(priceInput.value) || 0; saveProducts(); });
+      tdPrice.appendChild(priceInput);
+
+      const tdQty = document.createElement("td");
+      const qtyInput = document.createElement("input");
+      qtyInput.type = "number";
+      qtyInput.step = "1";
+      qtyInput.min = "0";
+      qtyInput.placeholder = "任意";
+      qtyInput.value = p.quantity || "";
+      qtyInput.addEventListener("input", ()=>{ p.quantity = parseFloat(qtyInput.value) || 0; saveProducts(); });
+      tdQty.appendChild(qtyInput);
+
+      const tdUnit = document.createElement("td");
+      const unitInput = document.createElement("input");
+      unitInput.type = "text";
+      unitInput.placeholder = "任意";
+      unitInput.value = p.unit || "";
+      unitInput.addEventListener("input", ()=>{ p.unit = unitInput.value; saveProducts(); });
+      tdUnit.appendChild(unitInput);
+
+      function makeDimInput(field){
+        const td = document.createElement("td");
+        const input = document.createElement("input");
+        input.type = "number";
+        input.step = "1";
+        input.min = "0";
+        input.placeholder = "任意";
+        input.value = p[field] || "";
+        input.addEventListener("input", ()=>{ p[field] = parseFloat(input.value) || 0; saveProducts(); });
+        td.appendChild(input);
+        return td;
+      }
+      const tdD = makeDimInput("d");
+      const tdW = makeDimInput("w");
+      const tdH = makeDimInput("h");
+
+      const tdActions = document.createElement("td");
+      tdActions.className = "row-actions";
+      const delBtn = document.createElement("button");
+      delBtn.className = "btn small danger";
+      delBtn.textContent = "削除";
+      delBtn.addEventListener("click", ()=>{
+        products = products.filter(x=>x.id !== p.id);
+        saveProducts();
+        renderProductTable();
+      });
+      tdActions.appendChild(delBtn);
+
+      tr.appendChild(tdName);
+      tr.appendChild(tdPrice);
+      tr.appendChild(tdQty);
+      tr.appendChild(tdUnit);
+      tr.appendChild(tdD);
+      tr.appendChild(tdW);
+      tr.appendChild(tdH);
+      tr.appendChild(tdActions);
+      tbody.appendChild(tr);
+    });
+  }
+
+  document.getElementById("btn-add-product").addEventListener("click", ()=>{
+    products.push({id: nextProductId++, name:"新規商品", price:0, quantity:0, unit:"", d:0, w:0, h:0});
+    saveProducts();
+    renderProductTable();
+  });
+  document.getElementById("btn-reset-products").addEventListener("click", ()=>{
+    if(!confirm("商品リストを初期状態に戻します。よろしいですか？")) return;
+    products = DEFAULT_PRODUCTS.map(p=>({...p}));
+    nextProductId = 100;
+    saveProducts();
+    renderProductTable();
+  });
+
+  // ---------- 送料設定の編集 ----------
+  const SIZE_BRACKETS = [60, 80, 100, 120, 140, 160, 180, 200];
+  const DEFAULT_SHIPPING_RATES = [
+    {id:1, origin:"本社", size:60, region:"関東", fee:800},
+    {id:2, origin:"本社", size:60, region:"関西", fee:1000},
+    {id:3, origin:"本社", size:60, region:"北海道・沖縄", fee:1500},
+    {id:4, origin:"本社", size:60, region:"その他", fee:1000},
+  ];
+  const DEFAULT_AREAS = ["本社", "関東", "関西", "北海道・沖縄", "その他"];
+  let shippingRates = [];
+  let areaNames = [];
+  let nextShippingId = 100;
+  let shippingSyncTimer = null;
+
+  function recomputeNextShippingId(){
+    nextShippingId = shippingRates.length ? Math.max(...shippingRates.map(r=>r.id)) + 1 : 100;
+  }
+  function setShippingSyncStatus(state){
+    const el = document.getElementById("shipping-sync-status");
+    if(!el) return;
+    el.className = state;
+    const labels = {
+      loading: "🔄 送料設定を読み込み中…",
+      busy: "🔄 保存中…",
+      synced: "✅ 保存しました（全員の計算ツールに反映されます）",
+      error: "⚠ 保存に失敗しました（通信状況をご確認ください）"
+    };
+    el.textContent = labels[state] || "";
+  }
+  function saveShipping(){
+    setShippingSyncStatus("busy");
+    clearTimeout(shippingSyncTimer);
+    shippingSyncTimer = setTimeout(pushShippingToRemote, 800);
+  }
+  async function pushShippingToRemote(){
+    try{
+      const res = await fetch(REMOTE_API_URL, {
+        method: "POST",
+        body: JSON.stringify({ type: "shipping", token: REMOTE_API_TOKEN, areaNames, rates: shippingRates })
+      });
+      const data = await res.json();
+      setShippingSyncStatus(data && data.ok ? "synced" : "error");
+    }catch(e){
+      setShippingSyncStatus("error");
+    }
+  }
+  async function initShipping(){
+    setShippingSyncStatus("loading");
+    try{
+      const res = await fetch(REMOTE_API_URL + "?type=shipping");
+      const data = await res.json();
+      const hasData = data && Array.isArray(data.rates) && Array.isArray(data.areaNames) && (data.rates.length || data.areaNames.length);
+      if(hasData){
+        areaNames = data.areaNames.length ? data.areaNames : [...DEFAULT_AREAS];
+        shippingRates = data.rates;
+        recomputeNextShippingId();
+        renderShippingTable();
+        setShippingSyncStatus("synced");
+      }else{
+        areaNames = [...DEFAULT_AREAS];
+        shippingRates = DEFAULT_SHIPPING_RATES.map(r=>({...r}));
+        recomputeNextShippingId();
+        renderShippingTable();
+        setShippingSyncStatus("");
+        await pushShippingToRemote(); // 共有シートがまだ空 → 初期値でシードする
+      }
+    }catch(e){
+      areaNames = [...DEFAULT_AREAS];
+      shippingRates = DEFAULT_SHIPPING_RATES.map(r=>({...r}));
+      recomputeNextShippingId();
+      renderShippingTable();
+      setShippingSyncStatus("error");
+    }
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  }
+  function addAreaName(name){
+    name = (name || "").trim();
+    if(!name || areaNames.includes(name)) return false;
+    areaNames.push(name);
+    return true;
+  }
+  // 発地・地域用の <select> を作る共通ヘルパー。一覧の最後に「＋ 新しい地域を追加」を付ける。
+  function buildAreaSelect(currentValue, onChange){
+    const select = document.createElement("select");
+    select.innerHTML = areaNames.map(a => '<option value="' + escapeHtml(a) + '">' + escapeHtml(a) + '</option>').join("") +
+      '<option value="__add__">＋ 新しい地域を追加</option>';
+    if(areaNames.includes(currentValue)) select.value = currentValue;
+    select.addEventListener("change", ()=>{
+      if(select.value === "__add__"){
+        const name = prompt("新しい地域名を入力してください");
+        const trimmed = (name || "").trim();
+        if(trimmed && addAreaName(trimmed)){
+          onChange(trimmed);
+          saveShipping();
+          renderShippingTable();
+        }else{
+          select.value = areaNames.includes(currentValue) ? currentValue : (areaNames[0] || "");
+        }
+        return;
+      }
+      onChange(select.value);
+    });
+    return select;
+  }
+
+  function renderShippingTable(){
+    const tbody = document.getElementById("shipping-tbody");
+    tbody.innerHTML = "";
+    shippingRates.forEach(r=>{
+      const tr = document.createElement("tr");
+
+      const tdOrigin = document.createElement("td");
+      const originSelect = buildAreaSelect(r.origin, (value)=>{ r.origin = value; saveShipping(); });
+      tdOrigin.appendChild(originSelect);
+
+      const tdSize = document.createElement("td");
+      const sizeSelect = document.createElement("select");
+      SIZE_BRACKETS.forEach(sz=>{
+        const opt = document.createElement("option");
+        opt.value = sz;
+        opt.textContent = sz + "サイズ";
+        sizeSelect.appendChild(opt);
+      });
+      sizeSelect.value = r.size;
+      sizeSelect.addEventListener("change", ()=>{ r.size = Number(sizeSelect.value); saveShipping(); });
+      tdSize.appendChild(sizeSelect);
+
+      const tdRegion = document.createElement("td");
+      const regionSelect = buildAreaSelect(r.region, (value)=>{ r.region = value; saveShipping(); });
+      tdRegion.appendChild(regionSelect);
+
+      const tdFee = document.createElement("td");
+      tdFee.className = "num";
+      const feeInput = document.createElement("input");
+      feeInput.type = "number";
+      feeInput.step = "1";
+      feeInput.min = "0";
+      feeInput.value = r.fee;
+      feeInput.addEventListener("input", ()=>{ r.fee = parseFloat(feeInput.value) || 0; saveShipping(); });
+      tdFee.appendChild(feeInput);
+
+      const tdActions = document.createElement("td");
+      tdActions.className = "row-actions";
+      const delBtn = document.createElement("button");
+      delBtn.className = "btn small danger";
+      delBtn.textContent = "削除";
+      delBtn.addEventListener("click", ()=>{
+        shippingRates = shippingRates.filter(x=>x.id !== r.id);
+        saveShipping();
+        renderShippingTable();
+      });
+      tdActions.appendChild(delBtn);
+
+      tr.appendChild(tdOrigin);
+      tr.appendChild(tdSize);
+      tr.appendChild(tdRegion);
+      tr.appendChild(tdFee);
+      tr.appendChild(tdActions);
+      tbody.appendChild(tr);
+    });
+  }
+
+  document.getElementById("btn-add-shipping").addEventListener("click", ()=>{
+    const fallback = areaNames[0] || "";
+    shippingRates.push({id: nextShippingId++, origin: fallback, size:60, region: fallback, fee:0});
+    saveShipping();
+    renderShippingTable();
+  });
+  document.getElementById("btn-reset-shipping").addEventListener("click", ()=>{
+    if(!confirm("送料設定を初期状態に戻します。よろしいですか？")) return;
+    shippingRates = DEFAULT_SHIPPING_RATES.map(r=>({...r}));
+    areaNames = [...DEFAULT_AREAS];
+    nextShippingId = 100;
+    saveShipping();
+    renderShippingTable();
   });
 })();
 </script>

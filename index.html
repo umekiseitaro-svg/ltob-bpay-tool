@@ -51,10 +51,6 @@
   section h2::before{content:"▼";color:var(--accent);font-size:12px;}
   .note{font-size:12px;color:var(--sub);margin:4px 0 10px;}
   .note.warn{color:var(--danger);}
-  #sync-status{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:99px;background:#f0f2f5;font-size:11.5px;}
-  #sync-status.synced{background:var(--ok-soft);color:var(--ok);}
-  #sync-status.offline, #sync-status.error{background:var(--danger-soft);color:var(--danger);}
-  #sync-status.busy{background:var(--accent-soft);color:var(--accent-dark);}
 
   .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -2px;}
   table{width:100%;min-width:520px;border-collapse:collapse;font-size:14px;}
@@ -194,31 +190,6 @@
     </div>
   </section>
 
-  <section id="section-products">
-    <h2>B商品価格リスト</h2>
-    <p class="note">商品名・価格は自由に編集・追加・削除できます。「数量」「単位」を入力すると、同じ単位の商品同士で割高な組み合わせ（例：1000粒×2 は 2000粒×1 より高い）を提案から自動的に除外します。「縦・横・高さ」(cm)を入力すると、商品1個あたりの体積として送料サイズの自動算出に使われます。いずれも空欄のままで構いません。</p>
-    <p class="note" id="sync-status"></p>
-    <div class="table-scroll">
-      <table>
-        <thead><tr>
-          <th style="width:160px;">商品名</th>
-          <th style="width:100px;">価格（円）</th>
-          <th style="width:70px;">数量</th>
-          <th style="width:60px;">単位</th>
-          <th style="width:60px;">縦(cm)</th>
-          <th style="width:60px;">横(cm)</th>
-          <th style="width:60px;">高さ(cm)</th>
-          <th style="width:60px;"></th>
-        </tr></thead>
-        <tbody id="product-tbody"></tbody>
-      </table>
-    </div>
-    <div class="toolbar">
-      <button class="btn" id="btn-add-product">＋ 商品を追加</button>
-      <button class="btn" id="btn-reset-products">初期リストに戻す</button>
-    </div>
-  </section>
-
   <section id="section-size-registry">
     <h2>サイズ登録一覧</h2>
     <p class="note">B払いの商品組み合わせごとに、配送サイズを登録します。商品リストに「縦・横・高さ」を入力した商品は、組み合わせを実際に積み重ねたときに必要な外寸を計算し、ヤマト運輸のクロネコボックス（60〜140サイズ）および規格品（160〜200サイズ）の実寸に収まる最小のサイズを自動登録します（宅配便のサイズは最終的に実際の梱包を測って決まるため、あくまで目安です）。「最終計算表示」でいつでも手動修正できます。</p>
@@ -231,27 +202,6 @@
         </tr></thead>
         <tbody id="size-registry-tbody"></tbody>
       </table>
-    </div>
-  </section>
-
-  <section id="section-shipping">
-    <h2>送料設定</h2>
-    <p class="note">「発地」「サイズ」「地域」の組み合わせごとに送料を登録します。必要な組み合わせだけ登録すればよく、全マス埋める必要はありません（この端末に保存されます）。</p>
-    <div class="table-scroll">
-      <table>
-        <thead><tr>
-          <th style="width:140px;">発地</th>
-          <th style="width:100px;">サイズ</th>
-          <th style="width:140px;">地域</th>
-          <th style="width:110px;">送料（円）</th>
-          <th style="width:60px;"></th>
-        </tr></thead>
-        <tbody id="shipping-tbody"></tbody>
-      </table>
-    </div>
-    <div class="toolbar">
-      <button class="btn" id="btn-add-shipping">＋ 組み合わせを追加</button>
-      <button class="btn" id="btn-reset-shipping">初期リストに戻す</button>
     </div>
   </section>
 
@@ -361,7 +311,6 @@
     {id:7, name:"BCEx 503", price:3200, quantity:0, unit:"", d:0, w:0, h:0},
   ];
 
-  let nextProductId = 100;
   let products = [];
   let desiredProductIds = new Set(); // default: none selected
   let proposals = []; // {sig, netSum, rawSum, totalSize, count, combo:{productId:qty}, diff}
@@ -380,7 +329,6 @@
     {id:4, origin:"本社", size:60, region:"その他", fee:1000},
   ];
   let shippingRates = [];
-  let nextShippingId = 100;
 
   // 発地・地域で共有する地域名マスタ（両方この一覧から選ぶ）
   const AREA_STORAGE_KEY = "ltob_bpay_areas_v1";
@@ -388,9 +336,6 @@
   let areaNames = [];
 
   // ---------- storage ----------
-  function recomputeNextProductId(){
-    nextProductId = products.length ? Math.max(...products.map(p=>p.id)) + 1 : 100;
-  }
   function loadCachedProducts(){
     try{
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -417,71 +362,24 @@
     }));
   }
 
-  // ---------- remote sync ----------
-  let syncTimer = null;
-  function setSyncStatus(state){
-    const el = document.getElementById("sync-status");
-    if(!el) return;
-    el.className = state;
-    const labels = {
-      loading: "🔄 商品リストを読み込み中…",
-      busy: "🔄 共有リストと同期中…",
-      synced: "✅ 共有リストと同期済み",
-      offline: "📴 オフライン（この端末のみに保存されています）",
-      error: "⚠ 同期に失敗しました（この端末のみに保存されています）"
-    };
-    el.textContent = labels[state] || "";
-  }
-  function saveProducts(){
-    saveLocalCache();
-    scheduleRemoteSync();
-  }
-  function scheduleRemoteSync(){
-    if(!REMOTE_API_URL) return;
-    setSyncStatus("busy");
-    clearTimeout(syncTimer);
-    syncTimer = setTimeout(pushProductsToRemote, 800);
-  }
-  async function pushProductsToRemote(){
-    if(!REMOTE_API_URL) return;
-    setSyncStatus("busy");
-    try{
-      const res = await fetch(REMOTE_API_URL, {
-        method: "POST",
-        body: JSON.stringify({ token: REMOTE_API_TOKEN, products })
-      });
-      const data = await res.json();
-      setSyncStatus(data && data.ok ? "synced" : "error");
-    }catch(e){
-      setSyncStatus("offline");
-    }
-  }
+  // ---------- remote fetch（商品リストは管理者ページで編集。ここでは読み込み専用） ----------
   async function initProducts(){
     const cached = loadCachedProducts();
     products = cached || DEFAULT_PRODUCTS.map(p=>({...p}));
-    recomputeNextProductId();
-    renderProductTable();
     renderDesiredChecklist();
 
-    if(!REMOTE_API_URL){ setSyncStatus(""); return; }
+    if(!REMOTE_API_URL) return;
 
-    setSyncStatus("loading");
     try{
       const res = await fetch(REMOTE_API_URL);
       const data = await res.json();
       if(data && Array.isArray(data.products) && data.products.length > 0){
         products = normalizeProducts(data.products);
-        recomputeNextProductId();
         saveLocalCache();
-        renderProductTable();
         renderDesiredChecklist();
-        setSyncStatus("synced");
-      }else{
-        // 共有シートがまだ空 → 現在のリストで初期化（シードする）
-        await pushProductsToRemote();
       }
     }catch(e){
-      setSyncStatus("offline");
+      // 取得できない場合はキャッシュ済み（または初期値）の商品リストのまま利用する
     }
   }
 
@@ -530,123 +428,37 @@
     return parts.join("、") || "（商品なし）";
   }
 
-  // ---------- product list rendering ----------
-  function renderProductTable(){
-    const tbody = document.getElementById("product-tbody");
-    tbody.innerHTML = "";
-    products.forEach(p=>{
-      const tr = document.createElement("tr");
-
-      const tdName = document.createElement("td");
-      const nameInput = document.createElement("input");
-      nameInput.type = "text";
-      nameInput.value = p.name;
-      nameInput.addEventListener("input", ()=>{ p.name = nameInput.value; saveProducts(); renderDesiredChecklist(); });
-      tdName.appendChild(nameInput);
-
-      const tdPrice = document.createElement("td");
-      tdPrice.className = "num";
-      const priceInput = document.createElement("input");
-      priceInput.type = "number";
-      priceInput.step = "1";
-      priceInput.min = "0";
-      priceInput.value = p.price;
-      priceInput.addEventListener("input", ()=>{
-        p.price = parseFloat(priceInput.value) || 0;
-        saveProducts();
-        renderDesiredChecklist();
-      });
-      tdPrice.appendChild(priceInput);
-
-      const tdQty = document.createElement("td");
-      const qtyInput = document.createElement("input");
-      qtyInput.type = "number";
-      qtyInput.step = "1";
-      qtyInput.min = "0";
-      qtyInput.placeholder = "任意";
-      qtyInput.value = p.quantity || "";
-      qtyInput.addEventListener("input", ()=>{
-        p.quantity = parseFloat(qtyInput.value) || 0;
-        saveProducts();
-      });
-      tdQty.appendChild(qtyInput);
-
-      const tdUnit = document.createElement("td");
-      const unitInput = document.createElement("input");
-      unitInput.type = "text";
-      unitInput.placeholder = "任意";
-      unitInput.value = p.unit || "";
-      unitInput.addEventListener("input", ()=>{
-        p.unit = unitInput.value;
-        saveProducts();
-      });
-      tdUnit.appendChild(unitInput);
-
-      function makeDimInput(field){
-        const td = document.createElement("td");
-        const input = document.createElement("input");
-        input.type = "number";
-        input.step = "1";
-        input.min = "0";
-        input.placeholder = "任意";
-        input.value = p[field] || "";
-        input.addEventListener("input", ()=>{
-          p[field] = parseFloat(input.value) || 0;
-          saveProducts();
-        });
-        td.appendChild(input);
-        return td;
+  // ---------- shipping rates / areas（管理者ページで編集・共有スプレッドシートから読み込み専用で取得） ----------
+  async function fetchShippingFromServer(){
+    if(!REMOTE_API_URL) return null;
+    try{
+      const res = await fetch(REMOTE_API_URL + "?type=shipping");
+      const data = await res.json();
+      if(data && Array.isArray(data.rates) && Array.isArray(data.areaNames)){
+        return { areaNames: data.areaNames, rates: data.rates };
       }
-      const tdD = makeDimInput("d");
-      const tdW = makeDimInput("w");
-      const tdH = makeDimInput("h");
-
-      const tdActions = document.createElement("td");
-      tdActions.className = "row-actions";
-      const delBtn = document.createElement("button");
-      delBtn.className = "btn small danger";
-      delBtn.textContent = "削除";
-      delBtn.addEventListener("click", ()=>{
-        products = products.filter(x=>x.id !== p.id);
-        desiredProductIds.delete(p.id);
-        saveProducts();
-        renderProductTable();
-        renderDesiredChecklist();
-      });
-      tdActions.appendChild(delBtn);
-
-      tr.appendChild(tdName);
-      tr.appendChild(tdPrice);
-      tr.appendChild(tdQty);
-      tr.appendChild(tdUnit);
-      tr.appendChild(tdD);
-      tr.appendChild(tdW);
-      tr.appendChild(tdH);
-      tr.appendChild(tdActions);
-      tbody.appendChild(tr);
-    });
+      return null;
+    }catch(e){
+      return null;
+    }
   }
+  async function initShipping(){
+    const cachedAreas = loadAreaNames();
+    const cachedRates = loadShippingRatesCache();
+    areaNames = cachedAreas || [...DEFAULT_AREAS];
+    shippingRates = cachedRates || DEFAULT_SHIPPING_RATES.map(r=>({...r}));
+    renderShippingSelectors();
 
-  document.getElementById("btn-add-product").addEventListener("click", ()=>{
-    const newProduct = {id: nextProductId++, name:"新規商品", price:0, quantity:0, unit:"", d:0, w:0, h:0};
-    products.push(newProduct);
-    saveProducts();
-    renderProductTable();
-    renderDesiredChecklist();
-  });
-  document.getElementById("btn-reset-products").addEventListener("click", ()=>{
-    if(!confirm("商品リストを初期状態に戻します。よろしいですか？")) return;
-    products = DEFAULT_PRODUCTS.map(p=>({...p}));
-    nextProductId = 100;
-    desiredProductIds.clear();
-    saveProducts();
-    renderProductTable();
-    renderDesiredChecklist();
-  });
-
-  // ---------- shipping rate table ----------
-  function recomputeNextShippingId(){
-    nextShippingId = shippingRates.length ? Math.max(...shippingRates.map(r=>r.id)) + 1 : 100;
+    const remote = await fetchShippingFromServer();
+    if(remote && (remote.areaNames.length || remote.rates.length)){
+      areaNames = remote.areaNames.length ? remote.areaNames : [...DEFAULT_AREAS];
+      shippingRates = remote.rates;
+      saveAreaNamesCache();
+      saveShippingRatesCache();
+      renderShippingSelectors();
+      renderProposals();
+      renderFinalPlans();
+    }
   }
   function loadAreaNames(){
     try{
@@ -656,42 +468,12 @@
         if(Array.isArray(parsed) && parsed.length) return parsed;
       }
     }catch(e){}
-    return [...DEFAULT_AREAS];
+    return null;
   }
-  function saveAreaNames(){
+  function saveAreaNamesCache(){
     try{ localStorage.setItem(AREA_STORAGE_KEY, JSON.stringify(areaNames)); }catch(e){}
   }
-  function addAreaName(name){
-    name = (name || "").trim();
-    if(!name || areaNames.includes(name)) return false;
-    areaNames.push(name);
-    saveAreaNames();
-    return true;
-  }
-  // 発地・地域用の <select> を作る共通ヘルパー。一覧の最後に「＋ 新しい地域を追加」を付ける。
-  function buildAreaSelect(currentValue, onChange){
-    const select = document.createElement("select");
-    select.innerHTML = areaNames.map(a => '<option value="' + escapeHtml(a) + '">' + escapeHtml(a) + '</option>').join("") +
-      '<option value="__add__">＋ 新しい地域を追加</option>';
-    if(areaNames.includes(currentValue)) select.value = currentValue;
-    select.addEventListener("change", ()=>{
-      if(select.value === "__add__"){
-        const name = prompt("新しい地域名を入力してください");
-        const trimmed = (name || "").trim();
-        if(trimmed && addAreaName(trimmed)){
-          onChange(trimmed);
-          renderShippingTable();
-          renderShippingSelectors();
-        }else{
-          select.value = areaNames.includes(currentValue) ? currentValue : (areaNames[0] || "");
-        }
-        return;
-      }
-      onChange(select.value);
-    });
-    return select;
-  }
-  function loadShippingRates(){
+  function loadShippingRatesCache(){
     try{
       const raw = localStorage.getItem(SHIPPING_STORAGE_KEY);
       if(raw){
@@ -699,102 +481,21 @@
         if(Array.isArray(parsed) && parsed.length) return parsed;
       }
     }catch(e){}
-    return DEFAULT_SHIPPING_RATES.map(r=>({...r}));
+    return null;
   }
-  function saveShippingRates(){
+  function saveShippingRatesCache(){
     try{ localStorage.setItem(SHIPPING_STORAGE_KEY, JSON.stringify(shippingRates)); }catch(e){}
   }
 
-  function renderShippingTable(){
-    const tbody = document.getElementById("shipping-tbody");
-    tbody.innerHTML = "";
-    shippingRates.forEach(r=>{
-      const tr = document.createElement("tr");
-
-      const tdOrigin = document.createElement("td");
-      const originSelect = buildAreaSelect(r.origin, (value)=>{
-        r.origin = value;
-        saveShippingRates();
-        renderShippingSelectors();
-        renderFinalPlans();
-      });
-      tdOrigin.appendChild(originSelect);
-
-      const tdSize = document.createElement("td");
-      const sizeSelect = document.createElement("select");
-      SIZE_BRACKETS.forEach(sz=>{
-        const opt = document.createElement("option");
-        opt.value = sz;
-        opt.textContent = sz + "サイズ";
-        sizeSelect.appendChild(opt);
-      });
-      sizeSelect.value = r.size;
-      sizeSelect.addEventListener("change", ()=>{
-        r.size = Number(sizeSelect.value);
-        saveShippingRates();
-        renderShippingSelectors();
-        renderFinalPlans();
-      });
-      tdSize.appendChild(sizeSelect);
-
-      const tdRegion = document.createElement("td");
-      const regionSelect = buildAreaSelect(r.region, (value)=>{
-        r.region = value;
-        saveShippingRates();
-        renderShippingSelectors();
-        renderFinalPlans();
-      });
-      tdRegion.appendChild(regionSelect);
-
-      const tdFee = document.createElement("td");
-      tdFee.className = "num";
-      const feeInput = document.createElement("input");
-      feeInput.type = "number";
-      feeInput.step = "1";
-      feeInput.min = "0";
-      feeInput.value = r.fee;
-      feeInput.addEventListener("input", ()=>{
-        r.fee = parseFloat(feeInput.value) || 0;
-        saveShippingRates();
-        renderShippingSelectors();
-        renderFinalPlans();
-      });
-      tdFee.appendChild(feeInput);
-
-      const tdActions = document.createElement("td");
-      tdActions.className = "row-actions";
-      const delBtn = document.createElement("button");
-      delBtn.className = "btn small danger";
-      delBtn.textContent = "削除";
-      delBtn.addEventListener("click", ()=>{
-        shippingRates = shippingRates.filter(x=>x.id !== r.id);
-        saveShippingRates();
-        renderShippingTable();
-        renderShippingSelectors();
-        renderFinalPlans();
-      });
-      tdActions.appendChild(delBtn);
-
-      tr.appendChild(tdOrigin);
-      tr.appendChild(tdSize);
-      tr.appendChild(tdRegion);
-      tr.appendChild(tdFee);
-      tr.appendChild(tdActions);
-      tbody.appendChild(tr);
-    });
-  }
-
   function renderShippingSelectors(){
-    const addOption = '<option value="__add__">＋ 新しい地域を追加</option>';
-
     const originSelect = document.getElementById("input-shipping-origin");
     const prevOrigin = originSelect.value;
-    originSelect.innerHTML = areaNames.map(o=>'<option value="' + escapeHtml(o) + '">' + escapeHtml(o) + '</option>').join("") + addOption;
+    originSelect.innerHTML = areaNames.map(o=>'<option value="' + escapeHtml(o) + '">' + escapeHtml(o) + '</option>').join("");
     if(areaNames.includes(prevOrigin)) originSelect.value = prevOrigin;
 
     const regionSelect = document.getElementById("input-shipping-region");
     const prevRegion = regionSelect.value;
-    regionSelect.innerHTML = areaNames.map(r=>'<option value="' + escapeHtml(r) + '">' + escapeHtml(r) + '</option>').join("") + addOption;
+    regionSelect.innerHTML = areaNames.map(r=>'<option value="' + escapeHtml(r) + '">' + escapeHtml(r) + '</option>').join("");
     if(areaNames.includes(prevRegion)) regionSelect.value = prevRegion;
 
     updateShippingFeeDisplay();
@@ -1030,39 +731,8 @@
     }
   }
 
-  document.getElementById("btn-add-shipping").addEventListener("click", ()=>{
-    const fallback = areaNames[0] || "";
-    const newRate = {id: nextShippingId++, origin: fallback, size:60, region: fallback, fee:0};
-    shippingRates.push(newRate);
-    saveShippingRates();
-    renderShippingTable();
-    renderShippingSelectors();
-    renderFinalPlans();
-  });
-  document.getElementById("btn-reset-shipping").addEventListener("click", ()=>{
-    if(!confirm("送料設定を初期状態に戻します。よろしいですか？")) return;
-    shippingRates = DEFAULT_SHIPPING_RATES.map(r=>({...r}));
-    nextShippingId = 100;
-    saveShippingRates();
-    renderShippingTable();
-    renderShippingSelectors();
-    renderFinalPlans();
-  });
   ["input-shipping-origin","input-shipping-region"].forEach(id=>{
-    document.getElementById(id).addEventListener("change", (e)=>{
-      const select = e.target;
-      if(select.value === "__add__"){
-        const name = prompt("新しい地域名を入力してください");
-        const trimmed = (name || "").trim();
-        const prevValue = areaNames[0] || "";
-        if(trimmed && addAreaName(trimmed)){
-          renderShippingTable();
-          renderShippingSelectors();
-          document.getElementById(id).value = trimmed;
-        }else{
-          select.value = prevValue;
-        }
-      }
+    document.getElementById(id).addEventListener("change", ()=>{
       updateShippingFeeDisplay();
       finalPlans.forEach(fp=>{
         fp.shippingOrigin = document.getElementById("input-shipping-origin").value;
@@ -1872,18 +1542,14 @@
   }
 
   // ---------- init ----------
-  areaNames = loadAreaNames();
-  shippingRates = loadShippingRates();
   sizeRegistry = loadSizeRegistry();
-  recomputeNextShippingId();
-  renderShippingTable();
-  renderShippingSelectors();
   renderSizeRegistryTable();
   updateShippingNeededUI();
   initQuotes();
   renderProposals();
   renderFinalPlans();
   initProducts();
+  initShipping();
 })();
 </script>
 </body>
