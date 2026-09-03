@@ -314,7 +314,6 @@
     <h2>確定</h2>
     <p class="note">内容がまとまったら「この内容で確定する」を押してください。管理者にメールで通知が届きます。確定後も引き続き編集・保存できます。</p>
     <p class="note warn" id="confirm-hint" style="display:none;">確定する前に、まず上の「現在の内容を名前を付けて保存」で計算書を保存してください。</p>
-    <p class="admin-lock-note" id="confirm-admin-note" style="display:none;">🔒 確定は管理者のみ行えます。ここでは内容の保存のみ行ってください。</p>
     <button class="btn primary" id="btn-confirm">この内容で確定する</button>
     <p class="note" id="confirm-status"></p>
   </section>
@@ -1621,18 +1620,6 @@
     const hint = document.getElementById("confirm-hint");
     const btn = document.getElementById("btn-confirm");
     const status = document.getElementById("confirm-status");
-    const adminNote = document.getElementById("confirm-admin-note");
-    if(!isAdmin){
-      hint.style.display = "none";
-      btn.style.display = "none";
-      adminNote.style.display = "";
-      status.textContent = editingQuoteStatus === "confirmed"
-        ? "確定済みです（" + new Date(editingQuoteConfirmedAt).toLocaleString("ja-JP") + "）"
-        : "";
-      return;
-    }
-    adminNote.style.display = "none";
-    btn.style.display = "";
     if(!editingQuoteId){
       hint.style.display = "";
       btn.disabled = true;

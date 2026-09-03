@@ -356,11 +356,15 @@
       alert("計算書の作成に失敗しました。通信状況をご確認ください。");
       return;
     }
-    const url = new URL("index.html", window.location.href);
-    url.searchParams.set("u", owner);
-    url.searchParams.set("loadQuote", id);
-    document.getElementById("generated-link").value = url.toString();
-    document.getElementById("link-edit").href = url.toString();
+    const sendUrl = new URL("index.html", window.location.href);
+    sendUrl.searchParams.set("u", owner);
+    sendUrl.searchParams.set("loadQuote", id);
+    document.getElementById("generated-link").value = sendUrl.toString();
+
+    // 「編集する」は管理者自身が今すぐ内容（割引率・すべて現金の場合の金額など）を
+    // 入力するためのリンクなので、担当者名ではなく管理者トークンで開く。
+    document.getElementById("link-edit").href = editUrl(id);
+
     document.getElementById("link-result").style.display = "";
     document.getElementById("copied-msg").style.display = "none";
     await refresh();
