@@ -94,7 +94,9 @@
   .field input[type=number]{
     border:1px solid var(--border);border-radius:8px;padding:9px 10px;font-size:15px;width:180px;
   }
+  .field input[type=number][readonly]{background:#f0f2f5;color:var(--sub);cursor:not-allowed;}
   .field .suffix{font-size:13px;color:var(--sub);}
+  .admin-lock-note{font-size:12px;color:var(--sub);margin:2px 0 0;}
   .checkbox-field{display:flex !important;align-items:center;gap:8px;font-weight:600;cursor:pointer;}
   .checkbox-field input[type=checkbox]{width:16px;height:16px;flex-shrink:0;}
 
@@ -229,6 +231,7 @@
         <input type="number" id="input-premium" step="0.1" min="0">
         <span class="suffix">割　（例：2割 → 2　／　小数点1桁まで）</span>
       </div>
+      <p class="admin-lock-note" id="premium-lock-note" style="display:none;">🔒 この項目は管理者のみ編集できます。</p>
     </div>
     <div class="field">
       <label>すべて現金の場合の金額</label>
@@ -236,6 +239,7 @@
         <input type="number" id="input-total-cash" step="1" min="0">
         <span class="suffix">円（税抜）</span>
       </div>
+      <p class="admin-lock-note" id="total-cash-lock-note" style="display:none;">🔒 この項目は管理者のみ編集できます。</p>
     </div>
     <div class="field">
       <label>そのうちB払いにしたい金額</label>
@@ -310,6 +314,7 @@
     <h2>確定</h2>
     <p class="note">内容がまとまったら「この内容で確定する」を押してください。管理者にメールで通知が届きます。確定後も引き続き編集・保存できます。</p>
     <p class="note warn" id="confirm-hint" style="display:none;">確定する前に、まず上の「現在の内容を名前を付けて保存」で計算書を保存してください。</p>
+    <p class="admin-lock-note" id="confirm-admin-note" style="display:none;">🔒 確定は管理者のみ行えます。ここでは内容の保存のみ行ってください。</p>
     <button class="btn primary" id="btn-confirm">この内容で確定する</button>
     <p class="note" id="confirm-status"></p>
   </section>
@@ -1616,6 +1621,18 @@
     const hint = document.getElementById("confirm-hint");
     const btn = document.getElementById("btn-confirm");
     const status = document.getElementById("confirm-status");
+    const adminNote = document.getElementById("confirm-admin-note");
+    if(!isAdmin){
+      hint.style.display = "none";
+      btn.style.display = "none";
+      adminNote.style.display = "";
+      status.textContent = editingQuoteStatus === "confirmed"
+        ? "確定済みです（" + new Date(editingQuoteConfirmedAt).toLocaleString("ja-JP") + "）"
+        : "";
+      return;
+    }
+    adminNote.style.display = "none";
+    btn.style.display = "";
     if(!editingQuoteId){
       hint.style.display = "";
       btn.disabled = true;
@@ -1646,12 +1663,22 @@
     }
   });
 
+  // ---------- 管理者のみ編集可能な項目の制御 ----------
+  function applyAdminOnlyRestrictions(){
+    if(isAdmin) return;
+    document.getElementById("input-premium").readOnly = true;
+    document.getElementById("input-total-cash").readOnly = true;
+    document.getElementById("premium-lock-note").style.display = "";
+    document.getElementById("total-cash-lock-note").style.display = "";
+  }
+
   // ---------- init ----------
   sizeRegistry = loadSizeRegistry();
   renderSizeRegistryTable();
   updateShippingNeededUI();
   updateQuoteNameBanner();
   updateConfirmUI();
+  applyAdminOnlyRestrictions();
   initQuotes();
   renderProposals();
   renderFinalPlans();
