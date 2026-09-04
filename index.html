@@ -1127,7 +1127,7 @@
         divider() +
         row("B払い 合計", yen(numbers.bPaySubtotal), "subtotal") +
         divider() +
-        row("現金（商品分）", yen(negative ? 0 : numbers.cashPortion)) +
+        row("現金", yen(negative ? 0 : numbers.cashPortion)) +
         row("送料（税抜）", !numbers.shippingNeeded ? "配送不要" : (numbers.sizeMissing ? "サイズ未登録" : yen(numbers.shippingFee))) +
         row("消費税", yen(negative ? 0 : numbers.tax)) +
         divider() +
