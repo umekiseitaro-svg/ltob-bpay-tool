@@ -23,6 +23,10 @@
   section{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px 18px 20px;margin-bottom:16px;}
   section h2{font-size:15px;margin:0 0 14px;display:flex;align-items:center;gap:6px;}
   section h2::before{content:"▼";color:var(--accent);font-size:12px;}
+  section.collapsible h2{cursor:pointer;user-select:none;}
+  section.collapsible.collapsed h2{margin-bottom:0;}
+  section.collapsible.collapsed h2::before{content:"▶";}
+  section.collapsible.collapsed > *:not(h2){display:none !important;}
   .note{font-size:12px;color:var(--sub);margin:4px 0 10px;}
   .field{margin-bottom:14px;}
   .field label{display:block;font-size:13px;font-weight:600;margin-bottom:6px;}
@@ -92,11 +96,11 @@
     <h2>計算書を作成してリンクを発行</h2>
     <p class="note">名前を入力して「計算書を作成」を押すと、その人専用の新しい計算書が作成されます。「編集する」から中身を入力したうえで、リンクをコピーしてLINEやメールなどでその人に送ってください（中身は空のまま送っても、相手が自分で入力できます）。</p>
     <div class="field">
-      <label>担当者名（この計算書の持ち主になります）</label>
+      <label>宛先（この計算書の持ち主になります）</label>
       <input type="text" id="input-owner-name" placeholder="例：田中">
     </div>
     <div class="field">
-      <label>計算書の名前（任意・得意先名など。空欄なら担当者名を使います）</label>
+      <label>計算書の名前（任意・得意先名など。空欄なら宛先を使います）</label>
       <input type="text" id="input-quote-name" placeholder="例：〇〇商店">
     </div>
     <button class="btn primary" id="btn-generate-link">計算書を作成</button>
@@ -112,7 +116,28 @@
     </div>
   </section>
 
-  <section id="section-products" style="display:none;">
+  <section id="section-list" style="display:none;">
+    <h2>保存された計算書一覧</h2>
+    <div class="field">
+      <label>担当者・名前で絞り込み</label>
+      <input type="text" id="input-filter" placeholder="例：田中、〇〇商店">
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr>
+          <th>担当者</th>
+          <th>名前</th>
+          <th style="width:90px;">状態</th>
+          <th style="width:170px;">保存日時</th>
+          <th style="width:90px;"></th>
+          <th style="width:60px;"></th>
+        </tr></thead>
+        <tbody id="quotes-tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="section-products" class="collapsible collapsed" style="display:none;">
     <h2>B商品価格リストの編集</h2>
     <p class="note">商品名・価格は自由に編集・追加・削除できます。「数量」「単位」を入力すると、同じ単位の商品同士で割高な組み合わせを提案から自動的に除外します。「縦・横・高さ」(cm)を入力すると、配送サイズの自動算出に使われます。ここでの変更は全員の計算ツールに反映されます。</p>
     <p class="note" id="sync-status"></p>
@@ -137,7 +162,7 @@
     </div>
   </section>
 
-  <section id="section-shipping" style="display:none;">
+  <section id="section-shipping" class="collapsible collapsed" style="display:none;">
     <h2>送料設定の編集</h2>
     <p class="note">「発地」「サイズ」「地域」の組み合わせごとに送料を登録します。必要な組み合わせだけ登録すればよく、全マス埋める必要はありません。ここでの変更は全員の計算ツールに反映されます。</p>
     <p class="note" id="shipping-sync-status"></p>
@@ -159,26 +184,6 @@
     </div>
   </section>
 
-  <section id="section-list" style="display:none;">
-    <h2>保存された計算書一覧</h2>
-    <div class="field">
-      <label>担当者・名前で絞り込み</label>
-      <input type="text" id="input-filter" placeholder="例：田中、〇〇商店">
-    </div>
-    <div class="table-scroll">
-      <table>
-        <thead><tr>
-          <th>担当者</th>
-          <th>名前</th>
-          <th style="width:90px;">状態</th>
-          <th style="width:170px;">保存日時</th>
-          <th style="width:90px;"></th>
-          <th style="width:60px;"></th>
-        </tr></thead>
-        <tbody id="quotes-tbody"></tbody>
-      </table>
-    </div>
-  </section>
 </div>
 
 <script>
@@ -766,6 +771,12 @@
     nextShippingId = 100;
     saveShipping();
     renderShippingTable();
+  });
+
+  document.querySelectorAll("section.collapsible > h2").forEach(h2 => {
+    h2.addEventListener("click", () => {
+      h2.closest("section").classList.toggle("collapsed");
+    });
   });
 })();
 </script>
