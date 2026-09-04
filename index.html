@@ -208,21 +208,6 @@
     </div>
   </section>
 
-  <section id="section-size-registry">
-    <h2>サイズ登録一覧</h2>
-    <p class="note">B払いの商品組み合わせごとに、配送サイズを登録します。商品リストに「縦・横・高さ」を入力した商品は、組み合わせを実際に積み重ねたときに必要な外寸を計算し、ヤマト運輸のクロネコボックス（60〜140サイズ）および規格品（160〜200サイズ）の実寸に収まる最小のサイズを自動登録します（宅配便のサイズは最終的に実際の梱包を測って決まるため、あくまで目安です）。「最終計算表示」でいつでも手動修正できます。</p>
-    <div class="table-scroll">
-      <table>
-        <thead><tr>
-          <th>組み合わせ</th>
-          <th style="width:110px;">サイズ（目安）</th>
-          <th style="width:60px;"></th>
-        </tr></thead>
-        <tbody id="size-registry-tbody"></tbody>
-      </table>
-    </div>
-  </section>
-
   <section id="section-calc">
     <h2>計算ツール</h2>
     <div class="field">
@@ -438,15 +423,6 @@
     }
     return s;
   }
-  function comboFromSig(sig){
-    const combo = {};
-    if(!sig) return combo;
-    sig.split("|").forEach(pair=>{
-      const [pid, qty] = pair.split(":");
-      if(pid) combo[pid] = Number(qty);
-    });
-    return combo;
-  }
   function comboText(combo){
     const parts = [];
     for(const pid in combo){
@@ -535,9 +511,9 @@
 
   // ---------- size registry（商品組み合わせごとに直接登録するサイズ） ----------
   const SIZE_REGISTRY_KEY = "ltob_bpay_size_registry_v1";
-  let sizeRegistry = {}; // { comboSig: sizeBracket }
+  let sizeRegistry = {}; // { comboSig: sizeBracket }（共有スプレッドシートに保存。全員の自動登録が反映される）
 
-  function loadSizeRegistry(){
+  function loadSizeRegistryCache(){
     try{
       const raw = localStorage.getItem(SIZE_REGISTRY_KEY);
       if(raw){
@@ -545,21 +521,47 @@
         if(parsed && typeof parsed === "object") return parsed;
       }
     }catch(e){}
-    return {};
+    return null;
   }
-  function saveSizeRegistry(){
+  function saveSizeRegistryCache(){
     try{ localStorage.setItem(SIZE_REGISTRY_KEY, JSON.stringify(sizeRegistry)); }catch(e){}
+  }
+  async function initSizeRegistry(){
+    sizeRegistry = loadSizeRegistryCache() || {};
+    if(!REMOTE_API_URL) return;
+    try{
+      const res = await fetch(REMOTE_API_URL + "?type=size_registry");
+      const data = await res.json();
+      if(data && data.registry && typeof data.registry === "object"){
+        sizeRegistry = data.registry;
+        saveSizeRegistryCache();
+        renderProposals();
+        renderFinalPlans();
+      }
+    }catch(e){
+      // 取得できない場合はキャッシュ済みの登録内容のまま利用する
+    }
   }
   function getRegisteredSize(sig){
     return Object.prototype.hasOwnProperty.call(sizeRegistry, sig) ? sizeRegistry[sig] : null;
   }
   function registerSize(sig, size){
     sizeRegistry[sig] = size;
-    saveSizeRegistry();
+    saveSizeRegistryCache();
+    if(!REMOTE_API_URL) return;
+    fetch(REMOTE_API_URL, {
+      method: "POST",
+      body: JSON.stringify({ type: "size_registry", token: REMOTE_API_TOKEN, action: "set", sig, size })
+    }).catch(()=>{});
   }
   function unregisterSize(sig){
     delete sizeRegistry[sig];
-    saveSizeRegistry();
+    saveSizeRegistryCache();
+    if(!REMOTE_API_URL) return;
+    fetch(REMOTE_API_URL, {
+      method: "POST",
+      body: JSON.stringify({ type: "size_registry", token: REMOTE_API_TOKEN, action: "delete", sig })
+    }).catch(()=>{});
   }
 
   // ---------- 実在するヤマト運輸「クロネコボックス」＋規格品ダンボールの寸法を基準にサイズを自動判定 ----------
@@ -659,49 +661,6 @@
       }
     }
     return { neededDims, bracket: null, boxName: null, boxDims: null, overSized: true };
-  }
-
-  function renderSizeRegistryTable(){
-    const tbody = document.getElementById("size-registry-tbody");
-    tbody.innerHTML = "";
-    const sigs = Object.keys(sizeRegistry);
-    if(sigs.length === 0){
-      tbody.innerHTML = '<tr><td colspan="3" class="empty-hint">まだ登録された組み合わせがありません。「最終計算表示」でサイズを選ぶと、ここに追加されます。</td></tr>';
-      return;
-    }
-    sigs.forEach(sig=>{
-      const tr = document.createElement("tr");
-
-      const tdCombo = document.createElement("td");
-      tdCombo.textContent = comboText(comboFromSig(sig));
-
-      const tdSize = document.createElement("td");
-      const select = document.createElement("select");
-      select.innerHTML = SIZE_BRACKETS.map(sz => '<option value="' + sz + '">' + sz + 'サイズ</option>').join("");
-      select.value = sizeRegistry[sig];
-      select.addEventListener("change", ()=>{
-        registerSize(sig, Number(select.value));
-        renderFinalPlans();
-      });
-      tdSize.appendChild(select);
-
-      const tdActions = document.createElement("td");
-      tdActions.className = "row-actions";
-      const delBtn = document.createElement("button");
-      delBtn.className = "btn small danger";
-      delBtn.textContent = "削除";
-      delBtn.addEventListener("click", ()=>{
-        unregisterSize(sig);
-        renderSizeRegistryTable();
-        renderFinalPlans();
-      });
-      tdActions.appendChild(delBtn);
-
-      tr.appendChild(tdCombo);
-      tr.appendChild(tdSize);
-      tr.appendChild(tdActions);
-      tbody.appendChild(tr);
-    });
   }
 
   function getShippingFeeFor(origin, size, region){
@@ -984,7 +943,6 @@
         }
         renderProposals();
         renderFinalPlans();
-        renderSizeRegistryTable();
       });
 
       const body = document.createElement("div");
@@ -1145,7 +1103,6 @@
         }else{
           registerSize(fp.sig, Number(sizeSelect.value));
         }
-        renderSizeRegistryTable();
         renderFinalPlans();
       });
       sizeRow.appendChild(sizeLabel);
@@ -1660,8 +1617,6 @@
   }
 
   // ---------- init ----------
-  sizeRegistry = loadSizeRegistry();
-  renderSizeRegistryTable();
   updateShippingNeededUI();
   updateQuoteNameBanner();
   updateConfirmUI();
@@ -1671,6 +1626,7 @@
   renderFinalPlans();
   initProducts();
   initShipping();
+  initSizeRegistry();
 })();
 </script>
 </body>

@@ -19,6 +19,9 @@ const SHIPPING_RATES_HEADERS = ["id", "origin", "size", "region", "fee"];
 const SHIPPING_AREAS_SHEET_NAME = "shipping_areas";
 const SHIPPING_AREAS_HEADERS = ["name"];
 
+const SIZE_REGISTRY_SHEET_NAME = "size_registry";
+const SIZE_REGISTRY_HEADERS = ["sig", "size"];
+
 // ここを必ず自分だけが知っている文字列に変更してください（第三者による書き換え防止用）
 const API_TOKEN = "YGfcWJDnrN8fXEs2m4ru0AOGFR-z63KW";
 
@@ -29,6 +32,9 @@ function doGet(e) {
   }
   if (type === "shipping") {
     return jsonOutput_({ areaNames: readShippingAreas_(), rates: readShippingRates_() });
+  }
+  if (type === "size_registry") {
+    return jsonOutput_({ registry: readSizeRegistry_() });
   }
   return jsonOutput_({ products: readProducts_() });
 }
@@ -50,6 +56,9 @@ function doPost(e) {
   }
   if (body.type === "shipping") {
     return handleShippingPost_(body);
+  }
+  if (body.type === "size_registry") {
+    return handleSizeRegistryPost_(body);
   }
   return handleProductsPost_(body);
 }
@@ -240,6 +249,60 @@ function handleShippingPost_(body) {
     lock.releaseLock();
   }
   return jsonOutput_({ ok: true });
+}
+
+// ---------- size_registry（商品組み合わせ→配送サイズ。全担当者が自動登録するため
+//            quotes と同じく1件ずつ書き込む方式にする（一括置き換えだと同時登録で消える恐れがある）） ----------
+function readSizeRegistry_() {
+  const sheet = getSheet_(SIZE_REGISTRY_SHEET_NAME, SIZE_REGISTRY_HEADERS);
+  const data = sheet.getDataRange().getValues();
+  const rows = data.slice(1).filter(r => r[0] !== "" && r[0] !== null);
+  const registry = {};
+  rows.forEach(r => { registry[r[0]] = r[1]; });
+  return registry;
+}
+
+function handleSizeRegistryPost_(body) {
+  const action = body.action;
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sheet = getSheet_(SIZE_REGISTRY_SHEET_NAME, SIZE_REGISTRY_HEADERS);
+
+    if (action === "set") {
+      const sig = body.sig;
+      const size = body.size;
+      if (!sig || !size) return jsonOutput_({ error: "invalid_payload" });
+      const rowIndex = findSizeRegistryRow_(sheet, sig);
+      if (rowIndex === -1) {
+        sheet.appendRow([sig, size]);
+      } else {
+        sheet.getRange(rowIndex, 1, 1, SIZE_REGISTRY_HEADERS.length).setValues([[sig, size]]);
+      }
+      return jsonOutput_({ ok: true });
+    }
+
+    if (action === "delete") {
+      const sig = body.sig;
+      if (!sig) return jsonOutput_({ error: "invalid_payload" });
+      const rowIndex = findSizeRegistryRow_(sheet, sig);
+      if (rowIndex === -1) return jsonOutput_({ error: "not_found" });
+      sheet.deleteRow(rowIndex);
+      return jsonOutput_({ ok: true });
+    }
+
+    return jsonOutput_({ error: "unknown_action" });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function findSizeRegistryRow_(sheet, sig) {
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(sig)) return i + 1; // 1-indexed row number
+  }
+  return -1;
 }
 
 // ---------- common ----------

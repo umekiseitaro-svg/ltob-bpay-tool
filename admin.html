@@ -190,6 +190,22 @@
     </div>
   </section>
 
+  <section id="section-size-registry" class="collapsible collapsed" style="display:none;">
+    <h2>サイズ登録一覧</h2>
+    <p class="note">B払いの商品組み合わせごとに、配送サイズを登録します。一般画面で案が採用されると自動登録され、ここで内容の確認・手動修正・削除ができます。ここでの変更は全員の計算ツールに反映されます。</p>
+    <p class="note" id="size-registry-sync-status"></p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr>
+          <th>組み合わせ</th>
+          <th style="width:110px;">サイズ（目安）</th>
+          <th style="width:60px;"></th>
+        </tr></thead>
+        <tbody id="size-registry-tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
 </div>
 
 <script>
@@ -207,10 +223,12 @@
     document.getElementById("section-generate-link").style.display = "";
     document.getElementById("section-products").style.display = "";
     document.getElementById("section-shipping").style.display = "";
+    document.getElementById("section-size-registry").style.display = "";
     document.getElementById("section-list").style.display = "";
     refresh();
     initProducts();
     initShipping();
+    initSizeRegistry();
   }
 
   function tryLogin(){
@@ -535,6 +553,7 @@
       products = hasData ? normalizeProducts(data.products) : DEFAULT_PRODUCTS.map(p=>({...p}));
       recomputeNextProductId();
       renderProductTable();
+      renderSizeRegistryTable();
       if(hasData){
         setSyncStatus("synced");
       }else{
@@ -545,6 +564,7 @@
       products = DEFAULT_PRODUCTS.map(p=>({...p}));
       recomputeNextProductId();
       renderProductTable();
+      renderSizeRegistryTable();
       setSyncStatus("error");
     }
   }
@@ -828,6 +848,124 @@
       h2.closest("section").classList.toggle("collapsed");
     });
   });
+
+  // ---------- サイズ登録一覧（一般画面で自動登録される。ここで確認・修正・削除） ----------
+  let sizeRegistry = {}; // { comboSig: sizeBracket }
+
+  function comboFromSig(sig){
+    const combo = {};
+    if(!sig) return combo;
+    sig.split("|").forEach(pair=>{
+      const [pid, qty] = pair.split(":");
+      if(pid) combo[pid] = Number(qty);
+    });
+    return combo;
+  }
+  function comboText(combo){
+    const parts = [];
+    for(const pid in combo){
+      const p = products.find(p=>p.id === Number(pid));
+      if(p) parts.push(p.name + " × " + combo[pid]);
+    }
+    return parts.join("、") || "（商品なし）";
+  }
+  function setSizeRegistrySyncStatus(state){
+    const el = document.getElementById("size-registry-sync-status");
+    if(!el) return;
+    el.className = state;
+    const labels = {
+      loading: "🔄 サイズ登録一覧を読み込み中…",
+      busy: "🔄 保存中…",
+      synced: "✅ 保存しました（全員の計算ツールに反映されます）",
+      error: "⚠ 保存に失敗しました（通信状況をご確認ください）"
+    };
+    el.textContent = labels[state] || "";
+  }
+  async function initSizeRegistry(){
+    setSizeRegistrySyncStatus("loading");
+    try{
+      const res = await fetch(REMOTE_API_URL + "?type=size_registry");
+      const data = await res.json();
+      sizeRegistry = (data && data.registry && typeof data.registry === "object") ? data.registry : {};
+      renderSizeRegistryTable();
+      setSizeRegistrySyncStatus(Object.keys(sizeRegistry).length ? "synced" : "");
+    }catch(e){
+      sizeRegistry = {};
+      renderSizeRegistryTable();
+      setSizeRegistrySyncStatus("error");
+    }
+  }
+  async function pushSizeRegistrySet(sig, size){
+    setSizeRegistrySyncStatus("busy");
+    try{
+      const res = await fetch(REMOTE_API_URL, {
+        method: "POST",
+        body: JSON.stringify({ type: "size_registry", token: REMOTE_API_TOKEN, action: "set", sig, size })
+      });
+      const data = await res.json();
+      setSizeRegistrySyncStatus(data && data.ok ? "synced" : "error");
+    }catch(e){
+      setSizeRegistrySyncStatus("error");
+    }
+  }
+  async function pushSizeRegistryDelete(sig){
+    setSizeRegistrySyncStatus("busy");
+    try{
+      const res = await fetch(REMOTE_API_URL, {
+        method: "POST",
+        body: JSON.stringify({ type: "size_registry", token: REMOTE_API_TOKEN, action: "delete", sig })
+      });
+      const data = await res.json();
+      setSizeRegistrySyncStatus(data && data.ok ? "synced" : "error");
+    }catch(e){
+      setSizeRegistrySyncStatus("error");
+    }
+  }
+
+  function renderSizeRegistryTable(){
+    const tbody = document.getElementById("size-registry-tbody");
+    if(!tbody) return;
+    tbody.innerHTML = "";
+    const sigs = Object.keys(sizeRegistry);
+    if(sigs.length === 0){
+      tbody.innerHTML = '<tr><td colspan="3" class="empty-hint">まだ登録された組み合わせがありません。一般画面で案が採用されると、ここに追加されます。</td></tr>';
+      return;
+    }
+    sigs.forEach(sig=>{
+      const tr = document.createElement("tr");
+
+      const tdCombo = document.createElement("td");
+      tdCombo.textContent = comboText(comboFromSig(sig));
+
+      const tdSize = document.createElement("td");
+      const select = document.createElement("select");
+      select.innerHTML = SIZE_BRACKETS.map(sz => '<option value="' + sz + '">' + sz + 'サイズ</option>').join("");
+      select.value = sizeRegistry[sig];
+      select.addEventListener("change", ()=>{
+        const size = Number(select.value);
+        sizeRegistry[sig] = size;
+        pushSizeRegistrySet(sig, size);
+      });
+      tdSize.appendChild(select);
+
+      const tdActions = document.createElement("td");
+      tdActions.className = "row-actions";
+      const delBtn = document.createElement("button");
+      delBtn.className = "btn small danger";
+      delBtn.textContent = "削除";
+      delBtn.addEventListener("click", ()=>{
+        delete sizeRegistry[sig];
+        pushSizeRegistryDelete(sig);
+        renderSizeRegistryTable();
+      });
+      tdActions.appendChild(delBtn);
+
+      tr.appendChild(tdCombo);
+      tr.appendChild(tdSize);
+      tr.appendChild(tdActions);
+      tbody.appendChild(tr);
+    });
+  }
 })();
 </script>
 </body>
