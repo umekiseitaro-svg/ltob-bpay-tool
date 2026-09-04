@@ -122,6 +122,11 @@
       <label>担当者・名前で絞り込み</label>
       <input type="text" id="input-filter" placeholder="例：田中、〇〇商店">
     </div>
+    <div class="link-result" id="quote-link-result" style="display:none;">
+      <input type="text" id="quote-link-display" readonly>
+      <button class="btn small" id="btn-copy-quote-link">コピー</button>
+      <span class="copied-msg" id="quote-link-copied-msg" style="display:none;">コピーしました</span>
+    </div>
     <div class="table-scroll">
       <table>
         <thead><tr>
@@ -129,6 +134,7 @@
           <th>名前</th>
           <th style="width:90px;">状態</th>
           <th style="width:170px;">保存日時</th>
+          <th style="width:80px;"></th>
           <th style="width:90px;"></th>
           <th style="width:60px;"></th>
         </tr></thead>
@@ -263,6 +269,42 @@
     return url.toString();
   }
 
+  // 担当者本人に送るためのリンク（管理者トークンではなく担当者名で開く）
+  function sendUrlFor(q){
+    const url = new URL("index.html", window.location.href);
+    url.searchParams.set("u", q.owner || "");
+    url.searchParams.set("loadQuote", q.id);
+    return url.toString();
+  }
+
+  async function showQuoteLink(url){
+    const display = document.getElementById("quote-link-display");
+    display.value = url;
+    document.getElementById("quote-link-result").style.display = "";
+    display.select();
+    try{
+      await navigator.clipboard.writeText(url);
+    }catch(e){
+      document.execCommand("copy");
+    }
+    const msg = document.getElementById("quote-link-copied-msg");
+    msg.style.display = "";
+    setTimeout(() => { msg.style.display = "none"; }, 2000);
+  }
+
+  document.getElementById("btn-copy-quote-link").addEventListener("click", async () => {
+    const field = document.getElementById("quote-link-display");
+    field.select();
+    try{
+      await navigator.clipboard.writeText(field.value);
+    }catch(e){
+      document.execCommand("copy");
+    }
+    const msg = document.getElementById("quote-link-copied-msg");
+    msg.style.display = "";
+    setTimeout(() => { msg.style.display = "none"; }, 2000);
+  });
+
   function render(){
     const tbody = document.getElementById("quotes-tbody");
     const filter = document.getElementById("input-filter").value.trim().toLowerCase();
@@ -273,7 +315,7 @@
     );
     tbody.innerHTML = "";
     if(filtered.length === 0){
-      tbody.innerHTML = '<tr><td colspan="6" class="empty-hint">保存された計算書がありません。</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" class="empty-hint">保存された計算書がありません。</td></tr>';
       return;
     }
     const sorted = [...filtered].sort((a, b) => b.savedAt - a.savedAt);
@@ -299,6 +341,13 @@
 
       const tdDate = document.createElement("td");
       tdDate.textContent = new Date(q.savedAt).toLocaleString("ja-JP");
+
+      const tdLink = document.createElement("td");
+      const linkBtn = document.createElement("button");
+      linkBtn.className = "btn small";
+      linkBtn.textContent = "リンク";
+      linkBtn.addEventListener("click", () => showQuoteLink(sendUrlFor(q)));
+      tdLink.appendChild(linkBtn);
 
       const tdOpen = document.createElement("td");
       const openLink = document.createElement("a");
@@ -327,6 +376,7 @@
       tr.appendChild(tdName);
       tr.appendChild(tdStatus);
       tr.appendChild(tdDate);
+      tr.appendChild(tdLink);
       tr.appendChild(tdOpen);
       tr.appendChild(tdDel);
       tbody.appendChild(tr);
@@ -337,7 +387,7 @@
     const result = await fetchQuotes();
     if(result === null){
       document.getElementById("quotes-tbody").innerHTML =
-        '<tr><td colspan="6" class="empty-hint">計算書一覧を取得できませんでした（通信状況をご確認ください）。</td></tr>';
+        '<tr><td colspan="7" class="empty-hint">計算書一覧を取得できませんでした（通信状況をご確認ください）。</td></tr>';
       return;
     }
     quotes = result;
