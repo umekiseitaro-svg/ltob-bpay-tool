@@ -181,7 +181,7 @@ function handleQuotesPost_(body) {
 }
 
 function notifyQuoteConfirmed_(q) {
-  if (!ADMIN_NOTIFY_EMAIL) return;
+  if (!ADMIN_NOTIFY_EMAIL) return { ok: false, reason: "no_email_configured" };
   try {
     MailApp.sendEmail({
       to: ADMIN_NOTIFY_EMAIL,
@@ -193,8 +193,10 @@ function notifyQuoteConfirmed_(q) {
         "確定日時：" + new Date().toLocaleString("ja-JP") + "\n\n" +
         "管理者ページから内容をご確認ください。"
     });
+    return { ok: true };
   } catch (err) {
-    // メール送信に失敗しても確定処理自体は成功させる
+    // メール送信に失敗しても確定処理自体は成功させる（呼び出し元でエラー内容だけ記録する）
+    return { ok: false, error: String(err) };
   }
 }
 
