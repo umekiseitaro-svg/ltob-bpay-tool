@@ -106,6 +106,10 @@
       <a class="btn small" id="link-edit" target="_blank" rel="noopener">編集する</a>
       <span class="copied-msg" id="copied-msg" style="display:none;">コピーしました</span>
     </div>
+    <p class="note" id="create-done-note" style="display:none;">✅ 作成しました。もう一度「計算書を作成」を押しても新しくは作られません。別の計算書を作りたい場合は、下のボタンを押してください。</p>
+    <div id="create-another-holder" style="display:none;margin-top:10px;">
+      <button class="btn small" id="btn-create-another">＋ 別の計算書を新規作成する</button>
+    </div>
   </section>
 
   <section id="section-products" style="display:none;">
@@ -351,8 +355,8 @@
     const ok = await postQuoteAction("add", {
       quote: { id, owner, name: quoteName, savedAt: Date.now(), state: {}, status: "draft", confirmedAt: null }
     });
-    btn.disabled = false;
     if(!ok){
+      btn.disabled = false;
       alert("計算書の作成に失敗しました。通信状況をご確認ください。");
       return;
     }
@@ -367,13 +371,35 @@
 
     document.getElementById("link-result").style.display = "";
     document.getElementById("copied-msg").style.display = "none";
+
+    // 誤って連打すると空の計算書が量産されてしまうため、作成後はフォームをロックし、
+    // 明示的に「別の計算書を新規作成する」を押すまで再度は作成できないようにする。
+    document.getElementById("input-owner-name").disabled = true;
+    document.getElementById("input-quote-name").disabled = true;
+    document.getElementById("create-done-note").style.display = "";
+    document.getElementById("create-another-holder").style.display = "";
+    // btn.disabled は true のまま維持（再度押せないようにする）
+
     await refresh();
+  }
+
+  function resetCreateQuoteForm(){
+    document.getElementById("input-owner-name").value = "";
+    document.getElementById("input-owner-name").disabled = false;
+    document.getElementById("input-quote-name").value = "";
+    document.getElementById("input-quote-name").disabled = false;
+    document.getElementById("btn-generate-link").disabled = false;
+    document.getElementById("link-result").style.display = "none";
+    document.getElementById("create-done-note").style.display = "none";
+    document.getElementById("create-another-holder").style.display = "none";
+    document.getElementById("input-owner-name").focus();
   }
 
   document.getElementById("btn-generate-link").addEventListener("click", createQuote);
   document.getElementById("input-quote-name").addEventListener("keydown", (e) => {
     if(e.key === "Enter") createQuote();
   });
+  document.getElementById("btn-create-another").addEventListener("click", resetCreateQuoteForm);
   document.getElementById("btn-copy-link").addEventListener("click", async () => {
     const field = document.getElementById("generated-link");
     field.select();
