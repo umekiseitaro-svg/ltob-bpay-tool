@@ -193,15 +193,12 @@
     <p class="note">現在の入力内容・計算結果を、得意先名などを付けて保存できます。ここに表示されるのは自分が保存した計算書のみです。</p>
     <div class="toolbar" style="margin-top:0;margin-bottom:14px;">
       <button class="btn primary" id="btn-save-quote">一時保存</button>
-      <button class="btn" id="btn-new-quote">新しい計算書を作成</button>
     </div>
     <div class="table-scroll">
       <table>
         <thead><tr>
           <th>名前</th>
           <th style="width:170px;">保存日時</th>
-          <th style="width:90px;"></th>
-          <th style="width:60px;"></th>
         </tr></thead>
         <tbody id="saved-quotes-tbody"></tbody>
       </table>
@@ -1357,7 +1354,7 @@
     const quotes = await fetchQuotesFromServer();
     if(quotes === null){
       document.getElementById("saved-quotes-tbody").innerHTML =
-        '<tr><td colspan="4" class="empty-hint">計算書一覧を取得できませんでした（通信状況をご確認ください）。</td></tr>';
+        '<tr><td colspan="2" class="empty-hint">計算書一覧を取得できませんでした（通信状況をご確認ください）。</td></tr>';
       return;
     }
     allQuotesRaw = quotes;
@@ -1407,7 +1404,7 @@
     tbody.innerHTML = "";
     const own = allQuotesRaw.filter(q => q.owner === currentUser);
     if(own.length === 0){
-      tbody.innerHTML = '<tr><td colspan="4" class="empty-hint">まだ保存された計算書がありません。</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="2" class="empty-hint">まだ保存された計算書がありません。</td></tr>';
       return;
     }
     const sorted = [...own].sort((a, b) => b.savedAt - a.savedAt);
@@ -1420,79 +1417,11 @@
       const tdDate = document.createElement("td");
       tdDate.textContent = new Date(q.savedAt).toLocaleString("ja-JP");
 
-      const tdLoad = document.createElement("td");
-      const loadBtn = document.createElement("button");
-      loadBtn.className = "btn small";
-      loadBtn.textContent = "読み込む";
-      loadBtn.addEventListener("click", () => {
-        if(finalPlans.length > 0 && !confirm("現在の作業内容は上書きされます。読み込みますか？")) return;
-        editingQuoteId = q.id;
-        editingQuoteOwner = q.owner;
-        editingQuoteName = q.name;
-        editingQuoteStatus = q.status || "draft";
-        editingQuoteConfirmedAt = q.confirmedAt || null;
-        restoreState(q.state);
-        renderSavedQuotesTable();
-        updateQuoteNameBanner();
-        updateConfirmUI();
-      });
-      tdLoad.appendChild(loadBtn);
-
-      const tdDel = document.createElement("td");
-      tdDel.className = "row-actions";
-      const delBtn = document.createElement("button");
-      delBtn.className = "btn small danger";
-      delBtn.textContent = "削除";
-      delBtn.addEventListener("click", async () => {
-        if(!confirm("「" + q.name + "」を削除します。よろしいですか？")) return;
-        const ok = await postQuoteAction("delete", { id: q.id });
-        if(ok){
-          if(editingQuoteId === q.id){
-            editingQuoteId = null; editingQuoteOwner = null; editingQuoteName = "";
-            editingQuoteStatus = "draft"; editingQuoteConfirmedAt = null;
-            updateQuoteNameBanner();
-            updateConfirmUI();
-          }
-          await refreshQuotesList();
-        }else{
-          alert("削除に失敗しました。通信状況をご確認ください。");
-        }
-      });
-      tdDel.appendChild(delBtn);
-
       tr.appendChild(tdName);
       tr.appendChild(tdDate);
-      tr.appendChild(tdLoad);
-      tr.appendChild(tdDel);
       tbody.appendChild(tr);
     });
   }
-
-  document.getElementById("btn-new-quote").addEventListener("click", () => {
-    if(!confirm("現在の作業内容をクリアして、新しい計算書を作成します。よろしいですか？")) return;
-    editingQuoteId = null;
-    editingQuoteOwner = null;
-    editingQuoteName = "";
-    editingQuoteStatus = "draft";
-    editingQuoteConfirmedAt = null;
-    updateQuoteNameBanner();
-    updateConfirmUI();
-    document.getElementById("input-premium").value = "";
-    document.getElementById("input-total-cash").value = "";
-    document.getElementById("input-desired-b").value = "";
-    document.getElementById("input-tax-rate").value = 10;
-    document.getElementById("input-shipping-needed").checked = true;
-    updateShippingNeededUI();
-    desiredProductIds.clear();
-    adoptedSigs.clear();
-    finalPlans = [];
-    proposals = [];
-    hasSearched = false;
-    renderDesiredChecklist();
-    renderProposals();
-    renderFinalPlans();
-    renderSavedQuotesTable();
-  });
 
   document.getElementById("btn-save-quote").addEventListener("click", async () => {
     const name = prompt("得意先名など、わかりやすい名前を付けてください", editingQuoteName || "");
