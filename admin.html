@@ -414,7 +414,10 @@
 
   document.getElementById("input-filter").addEventListener("input", render);
 
+  let creatingQuote = false;
   async function createQuote(){
+    // 通信完了前の二重実行（連打・Enterの連続）を防ぐ
+    if(creatingQuote) return;
     const nameInput = document.getElementById("input-owner-name");
     const owner = nameInput.value.trim();
     if(!owner){
@@ -423,12 +426,14 @@
     }
     const quoteName = document.getElementById("input-quote-name").value.trim() || owner;
     const btn = document.getElementById("btn-generate-link");
+    creatingQuote = true;
     btn.disabled = true;
     const id = "q_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
     const ok = await postQuoteAction("add", {
       quote: { id, owner, name: quoteName, savedAt: Date.now(), state: {}, status: "draft", confirmedAt: null }
     });
     if(!ok){
+      creatingQuote = false;
       btn.disabled = false;
       alert("計算書の作成に失敗しました。通信状況をご確認ください。");
       return;
@@ -461,6 +466,7 @@
     document.getElementById("input-owner-name").disabled = false;
     document.getElementById("input-quote-name").value = "";
     document.getElementById("input-quote-name").disabled = false;
+    creatingQuote = false;
     document.getElementById("btn-generate-link").disabled = false;
     document.getElementById("link-result").style.display = "none";
     document.getElementById("create-done-note").style.display = "none";
@@ -470,7 +476,8 @@
 
   document.getElementById("btn-generate-link").addEventListener("click", createQuote);
   document.getElementById("input-quote-name").addEventListener("keydown", (e) => {
-    if(e.key === "Enter") createQuote();
+    // 日本語入力の変換確定のEnterでは作成しない
+    if(e.key === "Enter" && !e.isComposing && e.keyCode !== 229) createQuote();
   });
   document.getElementById("btn-create-another").addEventListener("click", resetCreateQuoteForm);
   document.getElementById("btn-copy-link").addEventListener("click", async () => {
