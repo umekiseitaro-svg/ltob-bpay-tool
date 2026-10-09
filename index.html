@@ -234,6 +234,7 @@
         <input type="checkbox" id="input-all-b">
         全額B払い（この金額を超えない組み合わせだけを提案します）
       </label>
+      <p class="note" style="margin-top:4px;">※送料はB払いの対象外です。「配送が必要」の場合は、全額B払いでも送料とその消費税は現金でのお支払いになります。</p>
     </div>
     <div class="field">
       <label>消費税率</label>
@@ -671,7 +672,7 @@
 
   function describeComboShipping(sig, combo){
     const needed = document.getElementById("input-shipping-needed").checked;
-    if(!needed) return { text: "配送不要", warn: false };
+    if(!needed) return { text: "送料無料", warn: false };
 
     let bracket = getRegisteredSize(sig);
     let overSized = false;
@@ -1133,7 +1134,7 @@
         row("B払い 合計", yen(numbers.bPaySubtotal), "subtotal") +
         divider() +
         row("現金", yen(negative ? 0 : numbers.cashPortion)) +
-        row("送料（税抜）", !numbers.shippingNeeded ? "配送不要" : (numbers.sizeMissing ? "サイズ未登録" : yen(numbers.shippingFee))) +
+        row("送料（税抜）", !numbers.shippingNeeded ? "送料無料" : (numbers.sizeMissing ? "サイズ未登録" : yen(numbers.shippingFee))) +
         row("消費税", yen(negative ? 0 : numbers.tax)) +
         divider() +
         row("現金 合計", yen(negative ? 0 : numbers.subtotal), "subtotal") +
@@ -1218,7 +1219,7 @@
     cashBlock.innerHTML =
       '<h3>現金</h3>' +
       '<div class="estimate-row"><span>税抜（商品分）</span><span>' + yen(negative ? 0 : numbers.cashPortion) + '</span></div>' +
-      '<div class="estimate-row"><span>送料' + (!numbers.shippingNeeded ? "（配送不要）" : "（税抜" + (numbers.sizeMissing ? "" : "・" + numbers.sizeBracket + "サイズ目安") + "）") + '</span><span>' + (!numbers.shippingNeeded ? "—" : (numbers.sizeMissing ? "サイズ未登録" : yen(numbers.shippingFee))) + '</span></div>' +
+      '<div class="estimate-row"><span>送料' + (!numbers.shippingNeeded ? "" : "（税抜" + (numbers.sizeMissing ? "" : "・" + numbers.sizeBracket + "サイズ目安") + "）") + '</span><span>' + (!numbers.shippingNeeded ? "送料無料" : (numbers.sizeMissing ? "サイズ未登録" : yen(numbers.shippingFee))) + '</span></div>' +
       '<div class="estimate-row"><span>消費税</span><span>' + yen(negative ? 0 : numbers.tax) + '</span></div>' +
       '<div class="estimate-row total"><span>総額（税込）</span><span>' + yen(negative ? 0 : numbers.subtotal) + '</span></div>';
     box.appendChild(cashBlock);
