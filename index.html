@@ -248,6 +248,7 @@
         <input type="checkbox" id="input-shipping-needed" checked>
         配送が必要（外すと送料を計算に含めません。店頭渡しなどの場合はチェックを外してください）
       </label>
+      <p class="admin-lock-note" id="shipping-needed-lock-note" style="display:none;">🔒 この項目は管理者のみ編集できます。</p>
     </div>
     <div id="shipping-zone-fields">
       <div class="field">
@@ -1551,6 +1552,8 @@
     document.getElementById("input-total-cash").readOnly = true;
     document.getElementById("premium-lock-note").style.display = "";
     document.getElementById("total-cash-lock-note").style.display = "";
+    document.getElementById("input-shipping-needed").disabled = true;
+    document.getElementById("shipping-needed-lock-note").style.display = "";
   }
 
   // ---------- init ----------
