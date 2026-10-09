@@ -230,6 +230,10 @@
         <input type="number" id="input-desired-b" step="1" min="0">
         <span class="suffix">円</span>
       </div>
+      <label class="checkbox-field" style="margin-top:8px;">
+        <input type="checkbox" id="input-all-b">
+        全額B払い（この金額を超えない組み合わせだけを提案します）
+      </label>
     </div>
     <div class="field">
       <label>消費税率</label>
@@ -816,7 +820,7 @@
   // 元に、その合計が【そのうちB払いにしたい金額】から ±MATCH_WINDOW 円くらいになる組み合わせを探す。
   const MATCH_WINDOW = 10000;
 
-  function searchCombinations(selectedProducts, target, discountRate){
+  function searchCombinations(selectedProducts, target, discountRate, notOver){
     if(target <= 0 || selectedProducts.length === 0 || discountRate >= 1) return [];
 
     const withAdjusted = selectedProducts
@@ -861,7 +865,8 @@
     for(let s = 1; s <= maxSum; s++){
       if(dp[s]){
         const diff = s - target;
-        if(Math.abs(diff) <= MATCH_WINDOW){
+        // notOver（全額B払い）のときは、設定金額を超える組み合わせを除外する
+        if(Math.abs(diff) <= MATCH_WINDOW && !(notOver && diff > 0)){
           candidates.push({sum:s, count:dp[s].count, diff});
         }
       }
@@ -902,7 +907,7 @@
       return;
     }
 
-    proposals = searchCombinations(selected, desiredB, discountRate);
+    proposals = searchCombinations(selected, desiredB, discountRate, document.getElementById("input-all-b").checked);
     hasSearched = true;
     renderProposals();
   }
@@ -914,7 +919,7 @@
 
     if(proposals.length === 0){
       holder.innerHTML = hasSearched
-        ? '<div class="empty-hint">希望額±' + MATCH_WINDOW.toLocaleString("ja-JP") + '円くらいの組み合わせが見つかりませんでした。商品の選択や金額を見直してください。</div>'
+        ? '<div class="empty-hint">' + (document.getElementById("input-all-b").checked ? "設定金額以内（−" : "希望額±") + MATCH_WINDOW.toLocaleString("ja-JP") + (document.getElementById("input-all-b").checked ? "円まで）" : "円くらい") + 'の組み合わせが見つかりませんでした。商品の選択や金額を見直してください。</div>'
         : '<div class="empty-hint">まだ提案がありません。「ほしい商品」を選択して「組み合わせを提案する」を押してください。</div>';
       return;
     }
@@ -1370,6 +1375,7 @@
       shippingOrigin: document.getElementById("input-shipping-origin").value,
       shippingRegion: document.getElementById("input-shipping-region").value,
       shippingNeeded: document.getElementById("input-shipping-needed").checked,
+      allB: document.getElementById("input-all-b").checked,
       desiredProductIds: Array.from(desiredProductIds),
       adoptedSigs: Array.from(adoptedSigs),
       finalPlans: finalPlans.map(fp => ({ ...fp, combo: { ...fp.combo } })),
@@ -1384,6 +1390,7 @@
     document.getElementById("input-shipping-origin").value = state.shippingOrigin || "";
     document.getElementById("input-shipping-region").value = state.shippingRegion || "";
     document.getElementById("input-shipping-needed").checked = state.shippingNeeded !== false;
+    document.getElementById("input-all-b").checked = !!state.allB;
     updateShippingNeededUI();
 
     desiredProductIds = new Set(state.desiredProductIds || []);
