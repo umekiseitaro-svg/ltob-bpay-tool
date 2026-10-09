@@ -224,7 +224,7 @@
       <p class="admin-lock-note" id="total-cash-lock-note" style="display:none;">🔒 この項目は管理者のみ編集できます。</p>
     </div>
     <div class="field">
-      <label>そのうちB払いにしたい金額</label>
+      <label>そのうちB払いにしたい目安の金額</label>
       <div class="input-row">
         <span class="suffix">約</span>
         <input type="number" id="input-desired-b" step="1" min="0">
@@ -280,7 +280,7 @@
 
   <section id="section-proposals">
     <h2>B払い組み合わせ提案</h2>
-    <p class="note">上の「そのうちB払いにしたい金額」に近くなる商品の組み合わせを提案します。採用したい案にチェックを入れると、下の「最終計算表示」に案として追加されます。</p>
+    <p class="note">上の「そのうちB払いにしたい目安の金額」に近くなる商品の組み合わせを提案します。採用したい案にチェックを入れると、下の「最終計算表示」に案として追加されます。</p>
     <div class="toolbar" style="margin-top:0;margin-bottom:12px;">
       <button class="btn primary" id="btn-search">組み合わせを提案する</button>
     </div>
@@ -900,7 +900,7 @@
       return;
     }
     if(desiredB <= 0){
-      alert("「そのうちB払いにしたい金額」を入力してください。");
+      alert("「そのうちB払いにしたい目安の金額」を入力してください。");
       return;
     }
     const discountRate = premium / 10;
