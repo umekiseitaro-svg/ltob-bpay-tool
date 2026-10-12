@@ -1368,6 +1368,29 @@
     renderSavedQuotesTable();
   }
 
+  // 確定内容の要約（選択中の案）。管理画面の一覧と確定通知メールで使う。選択中の案がなければ null。
+  function buildConfirmSummary(){
+    const idx = finalPlans.findIndex(fp => fp.chosen);
+    if(idx === -1) return null;
+    const fp = finalPlans[idx];
+    const n = computePlanNumbers(fp);
+    const neg = n.cashPortion < 0;
+    return {
+      planLabel: planLabel(idx),
+      items: comboText(fp.combo),
+      bPayList: Math.round(n.bPay),
+      bPaySubtotal: Math.round(n.bPaySubtotal),
+      cashGoods: Math.round(neg ? 0 : n.cashPortion),
+      shippingNeeded: n.shippingNeeded,
+      shippingFee: n.sizeMissing ? null : Math.round(n.shippingFee),
+      tax: Math.round(neg ? 0 : n.tax),
+      cashTotal: Math.round(neg ? 0 : n.subtotal),
+      grandTotal: Math.round(neg ? n.bPaySubtotal : n.subtotal + n.bPaySubtotal),
+      premium: fp.premium,
+      taxRate: fp.taxRate
+    };
+  }
+
   function captureCurrentState(){
     return {
       premium: document.getElementById("input-premium").value,
@@ -1378,6 +1401,7 @@
       shippingRegion: document.getElementById("input-shipping-region").value,
       shippingNeeded: document.getElementById("input-shipping-needed").checked,
       allB: document.getElementById("input-all-b").checked,
+      confirmSummary: buildConfirmSummary(),
       desiredProductIds: Array.from(desiredProductIds),
       adoptedSigs: Array.from(adoptedSigs),
       finalPlans: finalPlans.map(fp => ({ ...fp, combo: { ...fp.combo } })),
@@ -1529,9 +1553,26 @@
   }
   document.getElementById("btn-confirm").addEventListener("click", async () => {
     if(!editingQuoteId) return;
-    if(!confirm("この内容で確定します。管理者にメールで通知されます。よろしいですか？")) return;
+    const hasChosen = finalPlans.some(fp => fp.chosen);
+    const msg = hasChosen
+      ? "この内容で確定します。管理者にメールで通知されます。よろしいですか？"
+      : "⚠ 案が選択されていません（「最終計算表示」で案にチェックが入っていません）。\n商品・金額の内容が空のまま確定されます。\n\nこのまま確定しますか？";
+    if(!confirm(msg)) return;
     const btn = document.getElementById("btn-confirm");
     btn.disabled = true;
+    // 確定する内容と保存内容がずれないよう、確定の直前に最新の状態を保存する
+    const saved = await postQuoteAction("update", {
+      quote: {
+        id: editingQuoteId, owner: editingQuoteOwner || currentUser, name: editingQuoteName,
+        savedAt: Date.now(), state: captureCurrentState(),
+        status: editingQuoteStatus, confirmedAt: editingQuoteConfirmedAt
+      }
+    });
+    if(!saved){
+      alert("確定に失敗しました（保存できませんでした）。通信状況をご確認ください。");
+      btn.disabled = false;
+      return;
+    }
     const ok = await postQuoteAction("confirm", { id: editingQuoteId });
     if(ok){
       editingQuoteStatus = "confirmed";

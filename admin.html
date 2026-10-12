@@ -68,6 +68,7 @@
     font-size:13px;background:#f8f9fb;color:var(--text);
   }
   .copied-msg{color:var(--ok);font-size:12px;margin-left:4px;}
+  .quote-summary{margin-top:4px;font-size:12px;color:var(--sub);line-height:1.5;}
   .status-badge{
     font-size:11px;font-weight:700;padding:3px 10px;border-radius:99px;background:#f0f2f5;color:var(--sub);
     white-space:nowrap;
@@ -345,6 +346,17 @@
 
       const tdName = document.createElement("td");
       tdName.textContent = q.name;
+      const summaryLines = quoteSummaryLines(q);
+      if(summaryLines.length){
+        const sum = document.createElement("div");
+        sum.className = "quote-summary";
+        summaryLines.forEach(t => {
+          const line = document.createElement("div");
+          line.textContent = t;
+          sum.appendChild(line);
+        });
+        tdName.appendChild(sum);
+      }
 
       const tdStatus = document.createElement("td");
       const statusBadge = document.createElement("span");
@@ -399,6 +411,31 @@
       tr.appendChild(tdDel);
       tbody.appendChild(tr);
     });
+  }
+
+  // 一覧に出す計算書の内容（確定済みは必ず出す。未確定でも案が選択されていれば出す）
+  function quoteSummaryLines(q){
+    const st = q.state || {};
+    const yen = n => Math.round(n).toLocaleString("ja-JP") + "円";
+    const sm = st.confirmSummary;
+    if(sm){
+      const ship = !sm.shippingNeeded ? "送料無料" : (sm.shippingFee === null ? "送料：サイズ未登録" : "送料 " + yen(sm.shippingFee) + "（税抜）");
+      return [
+        sm.planLabel + "：" + sm.items,
+        "B払い " + yen(sm.bPaySubtotal) + " ／ 現金 " + yen(sm.cashGoods) + " ／ " + ship + " ／ 消費税 " + yen(sm.tax),
+        "現金合計 " + yen(sm.cashTotal) + " ／ 総額 " + yen(sm.grandTotal) + "（割引" + sm.premium + "割・税率" + sm.taxRate + "%）"
+      ];
+    }
+    if(q.status !== "confirmed") return [];
+    // 旧データ（要約を持たない確定済み）は、選択中の案の商品だけでも出す
+    const plans = Array.isArray(st.finalPlans) ? st.finalPlans : [];
+    const chosen = plans.find(fp => fp.chosen);
+    if(!chosen) return ["⚠ 案が選択されないまま確定されています（商品・金額なし）"];
+    const items = Object.keys(chosen.combo || {}).map(pid => {
+      const pr = products.find(x => String(x.id) === String(pid));
+      return (pr ? pr.name : "商品" + pid) + " × " + chosen.combo[pid];
+    }).join("、");
+    return ["選択された案：" + items, "（金額は「詳細を開く」で確認できます）"];
   }
 
   async function refresh(){

@@ -161,7 +161,9 @@ function handleQuotesPost_(body) {
       const confirmedAt = Date.now();
       sheet.getRange(rowIndex, 6, 1, 2).setValues([["confirmed", confirmedAt]]);
       const row = sheet.getRange(rowIndex, 1, 1, QUOTES_HEADERS.length).getValues()[0];
-      notifyQuoteConfirmed_({ id: row[0], owner: row[1], name: row[2] });
+      let state = {};
+      try { state = JSON.parse(row[4] || "{}"); } catch (e) { state = {}; }
+      notifyQuoteConfirmed_({ id: row[0], owner: row[1], name: row[2], state: state });
       return jsonOutput_({ ok: true });
     }
 
@@ -191,13 +193,35 @@ function notifyQuoteConfirmed_(q) {
         "担当者：" + q.owner + "\n" +
         "計算書名：" + q.name + "\n" +
         "確定日時：" + new Date().toLocaleString("ja-JP") + "\n\n" +
-        "管理者ページから内容をご確認ください。"
+        buildConfirmSummaryText_((q.state || {}).confirmSummary) + "\n\n" +
+        "詳しい内容は管理者ページからご確認ください。"
     });
     return { ok: true };
   } catch (err) {
     // メール送信に失敗しても確定処理自体は成功させる（呼び出し元でエラー内容だけ記録する）
     return { ok: false, error: String(err) };
   }
+}
+
+function buildConfirmSummaryText_(sm) {
+  if (!sm) {
+    return "【確定内容】\n⚠ 案が選択されないまま確定されました（商品・金額の情報がありません）。";
+  }
+  const yen = function (n) { return Math.round(Number(n) || 0).toLocaleString("ja-JP") + "円"; };
+  const ship = !sm.shippingNeeded
+    ? "送料無料"
+    : (sm.shippingFee === null ? "サイズ未登録" : yen(sm.shippingFee) + "（税抜）");
+  return (
+    "【確定内容】\n" +
+    "採用案：" + sm.planLabel + "\n" +
+    "商品：" + sm.items + "\n" +
+    "B払い：" + yen(sm.bPaySubtotal) + "（定価合計 " + yen(sm.bPayList) + "、割引" + sm.premium + "割）\n" +
+    "現金（商品分・税抜）：" + yen(sm.cashGoods) + "\n" +
+    "送料：" + ship + "\n" +
+    "消費税（" + sm.taxRate + "%）：" + yen(sm.tax) + "\n" +
+    "現金 合計（税込）：" + yen(sm.cashTotal) + "\n" +
+    "総額（B払い＋現金）：" + yen(sm.grandTotal)
+  );
 }
 
 function findQuoteRow_(sheet, id) {
